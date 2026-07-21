@@ -1,0 +1,7 @@
+[features]
+rollout_budget = 3000000
+
+[profiles.verifier]
+sandbox_mode = "read-only"
+model_reasoning_effort = "high"
+approval_policy = "untrusted"

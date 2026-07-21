@@ -1,0 +1,172 @@
+location_a,location_b,distance_ft,distance_mi
+Stanford Court,Dartmouth Court,220,0.0416666666666667
+Columbia Court,Berkeley Court,265,0.0501893939393939
+Plaza Verde 1,Plaza Verde 2,302,0.0571969696969697
+Stanford Court,Princeton Court,342,0.0647727272727273
+Arroyo Vista,Plaza Verde 2,370,0.0700757575757576
+Arroyo Vista,Plaza Verde 1,371,0.0702651515151515
+Harvard Court,Cornell Court,400,0.0757575757575758
+Princeton Court,Ambrose,489,0.0926136363636364
+Vista del Campo,Camino del Sol,506,0.0958333333333333
+Princeton Court,Dartmouth Court,538,0.101893939393939
+Stanford Court,Oxford Court,594,0.1125
+Princeton Court,Cornell Court,594,0.1125
+Princeton Court,Oxford Court,633,0.119886363636364
+Stanford Court,Cornell Court,694,0.131439393939394
+Dartmouth Court,Cornell Court,714,0.135227272727273
+Dartmouth Court,Columbia Court,730,0.138257575757576
+Ambrose,Cornell Court,740,0.140151515151515
+Oxford Court,Dartmouth Court,765,0.144886363636364
+Vista del Campo Norte,Vista del Campo,769,0.145643939393939
+Vista del Campo Norte,Camino del Sol,830,0.15719696969697
+Stanford Court,Ambrose,832,0.157575757575758
+Berkeley Court,Cornell Court,893,0.169128787878788
+Berkeley Court,Harvard Court,909,0.172159090909091
+Columbia Court,Cornell Court,910,0.172348484848485
+Dartmouth Court,Berkeley Court,916,0.173484848484849
+Stanford Court,Columbia Court,933,0.176704545454545
+Oxford Court,Ambrose,951,0.180113636363636
+Verano,Arroyo Vista,979,0.185416666666667
+Princeton Court,Harvard Court,986,0.186742424242424
+Harvard Court,Puerta del Sol,996,0.188636363636364
+Ambrose,Dartmouth Court,1016,0.192424242424242
+Ambrose,Harvard Court,1017,0.192613636363636
+Columbia Court,Harvard Court,1033,0.195643939393939
+Dartmouth Court,Harvard Court,1074,0.203409090909091
+Stanford Court,Harvard Court,1087,0.205871212121212
+Stanford Court,Berkeley Court,1096,0.207575757575758
+Princeton Court,Columbia Court,1163,0.220265151515152
+Oxford Court,Cornell Court,1207,0.228598484848485
+Puerta del Sol,Plaza Verde 1,1230,0.232954545454545
+Princeton Court,Berkeley Court,1271,0.240719696969697
+Puerta del Sol,Arroyo Vista,1273,0.241098484848485
+Berkeley Court,Puerta del Sol,1306,0.247348484848485
+Verano,Plaza Verde 2,1319,0.249810606060606
+Verano,Plaza Verde 1,1333,0.252462121212121
+Cornell Court,Puerta del Sol,1381,0.26155303030303
+Plaza Verde 2,Vista del Campo Norte,1442,0.273106060606061
+Plaza Verde 2,Camino del Sol,1444,0.273484848484849
+Berkeley Court,Middle Earth,1486,0.281439393939394
+Oxford Court,Columbia Court,1491,0.282386363636364
+Puerta del Sol,Plaza Verde 2,1507,0.285416666666667
+Arroyo Vista,Camino del Sol,1512,0.286363636363636
+Puerta del Sol,Verano,1526,0.289015151515152
+Ambrose,Columbia Court,1554,0.294318181818182
+Columbia Court,Puerta del Sol,1558,0.295075757575758
+Ambrose,Berkeley Court,1601,0.303219696969697
+Oxford Court,Harvard Court,1606,0.304166666666667
+Verano,Camino del Sol,1656,0.313636363636364
+Columbia Court,Middle Earth,1657,0.313825757575758
+Middle Earth,Puerta del Sol,1666,0.315530303030303
+Oxford Court,Berkeley Court,1679,0.317992424242424
+Arroyo Vista,Vista del Campo Norte,1690,0.320075757575758
+Plaza Verde 1,Camino del Sol,1730,0.327651515151515
+Plaza Verde 1,Vista del Campo Norte,1738,0.329166666666667
+Plaza Verde 2,Vista del Campo,1852,0.350757575757576
+Harvard Court,Plaza Verde 1,1914,0.3625
+Dartmouth Court,Puerta del Sol,1950,0.369318181818182
+Arroyo Vista,Vista del Campo,1974,0.373863636363636
+Princeton Court,Puerta del Sol,1975,0.37405303030303
+Ambrose,Puerta del Sol,1986,0.376136363636364
+Stanford Court,Puerta del Sol,2022,0.382954545454545
+Oxford Court,Mesa Court,2041,0.38655303030303
+Dartmouth Court,Mesa Court,2097,0.397159090909091
+Harvard Court,Arroyo Vista,2100,0.397727272727273
+Middle Earth,Verano,2110,0.399621212121212
+Harvard Court,Middle Earth,2118,0.401136363636364
+Plaza Verde 1,Vista del Campo,2150,0.40719696969697
+Verano,Vista del Campo,2158,0.408712121212121
+Stanford Court,Mesa Court,2177,0.412310606060606
+Harvard Court,Plaza Verde 2,2216,0.41969696969697
+Verano,Vista del Campo Norte,2220,0.420454545454545
+Cornell Court,Middle Earth,2293,0.434280303030303
+Cornell Court,Plaza Verde 1,2302,0.435984848484849
+Columbia Court,Mesa Court,2304,0.436363636363636
+Dartmouth Court,Middle Earth,2384,0.451515151515152
+Princeton Court,Mesa Court,2478,0.469318181818182
+Cornell Court,Arroyo Vista,2498,0.473106060606061
+Berkeley Court,Plaza Verde 1,2505,0.474431818181818
+Harvard Court,Verano,2520,0.477272727272727
+Berkeley Court,Mesa Court,2563,0.485416666666667
+Stanford Court,Middle Earth,2577,0.488068181818182
+Berkeley Court,Arroyo Vista,2578,0.488257575757576
+Oxford Court,Puerta del Sol,2581,0.488825757575758
+Middle Earth,Arroyo Vista,2581,0.488825757575758
+Cornell Court,Plaza Verde 2,2603,0.492992424242424
+Ambrose,Plaza Verde 1,2651,0.502083333333333
+Berkeley Court,Verano,2672,0.506060606060606
+Middle Earth,Plaza Verde 1,2719,0.514962121212121
+Columbia Court,Plaza Verde 1,2742,0.519318181818182
+Princeton Court,Middle Earth,2752,0.521212121212121
+Puerta del Sol,Camino del Sol,2759,0.522537878787879
+Berkeley Court,Plaza Verde 2,2795,0.529356060606061
+Cornell Court,Mesa Court,2808,0.531818181818182
+Columbia Court,Arroyo Vista,2829,0.535795454545455
+Princeton Court,Plaza Verde 1,2838,0.5375
+Cornell Court,Verano,2907,0.550568181818182
+Ambrose,Arroyo Vista,2917,0.552462121212121
+Middle Earth,Plaza Verde 2,2923,0.553598484848485
+Ambrose,Mesa Court,2932,0.55530303030303
+Columbia Court,Verano,2936,0.556060606060606
+Ambrose,Plaza Verde 2,2938,0.556439393939394
+Puerta del Sol,Vista del Campo Norte,2942,0.55719696969697
+Dartmouth Court,Plaza Verde 1,2986,0.565530303030303
+Stanford Court,Plaza Verde 1,2996,0.567424242424242
+Ambrose,Middle Earth,3033,0.574431818181818
+Columbia Court,Plaza Verde 2,3035,0.574810606060606
+Princeton Court,Arroyo Vista,3060,0.579545454545455
+Princeton Court,Plaza Verde 2,3136,0.593939393939394
+Harvard Court,Mesa Court,3143,0.595265151515152
+Oxford Court,Middle Earth,3147,0.596022727272727
+Dartmouth Court,Arroyo Vista,3153,0.597159090909091
+Stanford Court,Arroyo Vista,3186,0.603409090909091
+Puerta del Sol,Vista del Campo,3238,0.613257575757576
+Dartmouth Court,Plaza Verde 2,3287,0.622537878787879
+Stanford Court,Plaza Verde 2,3297,0.624431818181818
+Dartmouth Court,Verano,3446,0.652651515151515
+Mesa Court,Middle Earth,3467,0.656628787878788
+Oxford Court,Plaza Verde 1,3471,0.657386363636364
+Ambrose,Verano,3484,0.659848484848485
+Princeton Court,Verano,3501,0.663068181818182
+Stanford Court,Verano,3537,0.669886363636364
+Harvard Court,Camino del Sol,3609,0.683522727272727
+Harvard Court,Vista del Campo Norte,3632,0.687878787878788
+Oxford Court,Arroyo Vista,3692,0.699242424242424
+Middle Earth,Camino del Sol,3757,0.71155303030303
+Oxford Court,Plaza Verde 2,3769,0.713825757575758
+Mesa Court,Puerta del Sol,3859,0.730871212121212
+Cornell Court,Camino del Sol,4006,0.758712121212121
+Cornell Court,Vista del Campo Norte,4007,0.758901515151515
+Harvard Court,Vista del Campo,4055,0.767992424242424
+Berkeley Court,Camino del Sol,4057,0.768371212121212
+Oxford Court,Verano,4104,0.777272727272727
+Middle Earth,Vista del Campo Norte,4214,0.798106060606061
+Berkeley Court,Vista del Campo Norte,4237,0.802462121212121
+Ambrose,Vista del Campo Norte,4247,0.804356060606061
+Middle Earth,Vista del Campo,4261,0.807007575757576
+Columbia Court,Camino del Sol,4314,0.817045454545455
+Ambrose,Camino del Sol,4380,0.829545454545455
+Cornell Court,Vista del Campo,4448,0.842424242424242
+Columbia Court,Vista del Campo Norte,4477,0.847916666666667
+Princeton Court,Vista del Campo Norte,4508,0.853787878787879
+Berkeley Court,Vista del Campo,4540,0.859848484848485
+Princeton Court,Camino del Sol,4559,0.86344696969697
+Dartmouth Court,Camino del Sol,4664,0.883333333333333
+Stanford Court,Camino del Sol,4696,0.889393939393939
+Stanford Court,Vista del Campo Norte,4699,0.889962121212121
+Dartmouth Court,Vista del Campo Norte,4706,0.891287878787879
+Ambrose,Vista del Campo,4781,0.905492424242424
+Columbia Court,Vista del Campo,4795,0.908143939393939
+Princeton Court,Vista del Campo,4988,0.94469696969697
+Mesa Court,Plaza Verde 1,5014,0.949621212121212
+Dartmouth Court,Vista del Campo,5119,0.969507575757576
+Mesa Court,Arroyo Vista,5126,0.970833333333333
+Oxford Court,Vista del Campo Norte,5134,0.972348484848485
+Stanford Court,Vista del Campo,5141,0.973674242424242
+Oxford Court,Camino del Sol,5192,0.983333333333333
+Mesa Court,Verano,5202,0.985227272727273
+Mesa Court,Plaza Verde 2,5312,1.00606060606061
+Oxford Court,Vista del Campo,5620,1.06439393939394
+Mesa Court,Camino del Sol,6617,1.2532196969697
+Mesa Court,Vista del Campo Norte,6750,1.27840909090909
+Mesa Court,Vista del Campo,7097,1.34412878787879
