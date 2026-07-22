@@ -11,8 +11,13 @@ checklist row at a time, until nothing is left unbuilt.
 
 Codex: treat this as a durable goal. Keep iterating across turns until the definition of done below
 is met. Do not declare the goal complete based on your own judgment alone — completion must be
-confirmed by the read-only verifier profile (`[profiles.verifier]` in `../.codex/config.toml`)
-against `CHECKLIST.md` and reflected in `PROGRESS.md`.
+confirmed by the read-only verifier profile (`[profiles.verifier]` in `../.codex/config.toml`,
+invoked via `codex --profile verifier`) against `CHECKLIST.md` and reflected in `PROGRESS.md`.
+
+**Before anything else, read `../AGENTS.md`** (Codex reads it automatically at session start, but
+its rules are load-bearing enough to restate here) — it defines exactly when you should proceed
+without asking versus stop and get human confirmation. This file assumes you already know that
+distinction; it does not repeat it.
 
 ## The per-turn cycle
 
@@ -38,7 +43,10 @@ this fixed sequence:
    requirement IDs (e.g. `Row 07: detour-cost algorithm core (BE-001–BE-024)`), then push. If the
    repo has CI wired up (row 42) and branch protection on `main`, push a branch and open a PR so CI
    gates the merge; until then, commit directly to `main` — this is a solo-developer repo (PRD
-   §1.4) with no external approval chain.
+   §1.4) with no external approval chain. This step runs under `codex --profile build`
+   (`sandbox_mode = "workspace-write"`, `approval_policy = "never"` — see `../.codex/config.toml`),
+   so it should not stop to ask permission for the command itself; `AGENTS.md`'s Tier 2 list is
+   about product/design judgment calls, not command execution.
 5. **Update PROGRESS.md** — set the row's status, verifier-check result, and a one-line note;
    append a Turn log line with the commit SHA. Do this in the same turn as the commit, not deferred.
 6. **Move to the next Missing row.**
@@ -96,15 +104,9 @@ rollout) are both Done.
 5. Row 00 (Telnyx Toll-Free Verification) is a human action, not a code task — it cannot be done
    from the repo. Log it as an escalation on turn 1 and do not let it block any other row; only
    Phase 6 (pilot launch) actually depends on it being approved.
-6. Stop and surface to the human (via remote approval / chat) if:
-   - You've been blocked on the same open question for 2+ turns.
-   - You're about to mark a row `Skipped` and it touches schema, the assignment algorithm, tenant
-     isolation, or security (rows 03, 04, 07, 37, 41, 44) — these skips need human confirmation,
-     not assumption. Row 45 (the full requirement-ID cross-check) must never be Skipped, full stop.
-   - The token/turn budget (`rollout_budget` in `../.codex/config.toml`) is running low relative to
-     remaining Missing rows.
-   - A verifier block repeats twice in a row on the same requirement ID — that usually means the
-     row's design needs to change, not just the code.
-   - Row 45's cross-check finds a requirement ID no earlier row covered — that's a real gap in the
-     original checklist, not a false alarm; surface it, then either build it under a new row or get
-     an explicit human-confirmed Skip before Phase 6.
+6. **When to stop and ask a human is defined in `../AGENTS.md` (Tier 2), not restated here** — that
+   file is the single source of truth for the approval gate so it can't drift out of sync with this
+   one. In short: schema/algorithm/security/tenant-isolation Skips, repeated verifier blocks on the
+   same ID, unresolved design forks, and row 45 finding a real gap all require a stop. Row 45 itself
+   must never be marked Skipped. There is no native turn/token budget to watch for (verified — see
+   `AGENTS.md`'s note); check progress periodically instead of relying on a budget signal to stop.

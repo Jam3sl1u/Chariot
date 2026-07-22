@@ -1,7 +1,19 @@
-[features]
-rollout_budget = 3000000
+# Values confirmed against OpenAI's official Codex CLI docs (learn.chatgpt.com/docs) — no
+# fictional keys. There is no rollout_budget / token-budget-cap feature in Codex CLI; do not
+# reintroduce one here without re-verifying it against the current docs first.
+
+[profiles.build]
+# Normal build/test/commit/push turns (.prd_loop/GOAL.md's per-turn cycle). Full autonomy for
+# command execution, contained to this repo — command-level autonomy is separate from the
+# product/design judgment calls governed by AGENTS.md's two-tier approval rules.
+sandbox_mode = "workspace-write"
+approval_policy = "never"
+model_reasoning_effort = "high"
 
 [profiles.verifier]
+# Read-only review pass: independently re-reads the PRD and confirms a row's diff + tests match
+# before it's marked Done (GOAL.md's Verification section). Always prompts — this profile should
+# never be able to write, so "untrusted" here is a deliberate belt-and-suspenders, not friction.
 sandbox_mode = "read-only"
-model_reasoning_effort = "high"
 approval_policy = "untrusted"
+model_reasoning_effort = "high"
