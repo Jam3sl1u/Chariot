@@ -77,6 +77,11 @@ row or ending the session:
    verifier (`codex --profile verifier`) is expected to independently execute the row's test
    command itself, not just read the diff and take the build turn's word for it — if that hasn't
    happened yet, the row stays `In Progress`, not `Done`.
+5. **Did I push before the verifier's verdict came back PASS?** Don't. Commit locally after
+   build+test, but hold `git push` until the read-only verifier pass has actually run and returned
+   PASS (it cannot push or write files itself — it only states a verdict, which the next
+   `--profile build` turn transcribes into `PROGRESS.md` and acts on). A BLOCK verdict means: fix
+   it, don't push, retry next turn.
 
 ## Command-level autonomy (separate from the above)
 

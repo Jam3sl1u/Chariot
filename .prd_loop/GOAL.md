@@ -41,34 +41,43 @@ this fixed sequence:
    "tests pass" without having run them in this turn. All tests for this row must pass locally
    before moving on. A row is not buildable-complete without its tests — "build" and "test" are one
    step, not two rows. See `../AGENTS.md`'s mandatory self-check before ending the turn.
-4. **Commit & push** — commit the row's changes with a message referencing the row number and
-   requirement IDs (e.g. `Row 07: detour-cost algorithm core (BE-001–BE-024)`), then push. If the
-   repo has CI wired up (row 42) and branch protection on `main`, push a branch and open a PR so CI
-   gates the merge; until then, commit directly to `main` — this is a solo-developer repo (PRD
-   §1.4) with no external approval chain. This step runs under `codex --profile build`
-   (`sandbox_mode = "workspace-write"`, `approval_policy = "never"` — see `../.codex/config.toml`),
-   so it should not stop to ask permission for the command itself; `AGENTS.md`'s Tier 2 list is
-   about product/design judgment calls, not command execution.
-5. **Update PROGRESS.md** — set the row's status, verifier-check result, and a one-line note;
-   append a Turn log line with the commit SHA. Do this in the same turn as the commit, not deferred.
-6. **Move to the next Missing row.**
+4. **Commit locally — do not push yet.** Commit the row's changes with a message referencing the
+   row number and requirement IDs (e.g. `Row 07: detour-cost algorithm core (BE-001–BE-024)`). This
+   step runs under `codex --profile build` (`sandbox_mode = "workspace-write"`,
+   `approval_policy = "never"` — see `../.codex/config.toml`), so it should not stop to ask
+   permission for the command itself; `AGENTS.md`'s Tier 2 list is about product/design judgment
+   calls, not command execution. **Pushing happens in step 6, only after step 5 passes** — an
+   unverified commit sitting locally is cheap to fix; an unverified commit already pushed to a
+   shared remote is not, especially once row 42's CI/branch protection exists.
+5. **Verify (independent, read-only)** — see "Verification" below. The verifier profile has
+   `sandbox_mode = "read-only"`, which means **it cannot edit `PROGRESS.md` or push anything
+   itself** — its output is a verdict (PASS or BLOCK, with citations), not a file write. Capture
+   that verdict; it drives step 6.
+6. **Finalize** — back under `codex --profile build` (the only profile that can write files or
+   push): record the verifier's verdict in `PROGRESS.md` (status, Verifier check column, Turn log
+   with commit SHA) in the same turn. **Only run `git push` if the verdict was PASS.** If it was
+   BLOCK, do not push — leave the row `In Progress`, put the specific gap in the Note column, and
+   fix it next turn (or escalate per `AGENTS.md` if the same requirement ID blocks twice).
+7. **Move to the next Missing row** (only reachable after a PASS+push, or after logging a BLOCK/
+   escalation and deciding to work an independent row in the meantime per `AGENTS.md`'s "How to ask").
 
 ## Verification
 
-Every row moved to `Done` in a given turn must first be checked by the read-only verifier profile.
-The verifier's job: **independently re-read the actual PRD text** for that row's requirement IDs
-(not `CHECKLIST.md`'s paraphrase — go back to `documentation/Chariot_PRD_v1.3.md` itself), **re-run
-the row's actual test command itself** (don't just read the build turn's claimed output — its
-`sandbox_mode = "read-only"` still permits executing a test command; `approval_policy = "untrusted"`
-means it will prompt before doing so, which is expected, not a failure), and confirm the diff and
-the real test output match the PRD line-by-line — it does not write or fix code, only approves or
-blocks with a specific reason (e.g. "BE-018 requires the *larger* of percent/flat tolerance; the
-diff only checks percent" or "claimed tests pass, but re-running `npm test -- assign` shows 2
-failures"). Record that specific citation in `PROGRESS.md`'s Verifier check column (which PRD
-requirement, which file/line it maps to, the actual test command and result it independently
-observed) — not just a checkmark, since an unspecific "✓" gives no way to audit the check later. If
-it blocks, the row stays `In Progress`, the specific gap goes in the row's Note column, and the same
-row is retried next turn — do not move on with a known mismatch.
+Every row must be checked by the read-only verifier profile **before it is pushed**, not just
+before it's marked `Done`. The verifier's job: **independently re-read the actual PRD text** for
+that row's requirement IDs (not `CHECKLIST.md`'s paraphrase — go back to
+`documentation/Chariot_PRD_v1.3.md` itself), **re-run the row's actual test command itself** (don't
+just read the build turn's claimed output — its `sandbox_mode = "read-only"` still permits
+executing a test command; `approval_policy = "untrusted"` means it will prompt before doing so,
+which is expected, not a failure), and confirm the diff and the real test output match the PRD
+line-by-line. It does not write or fix code, and **it cannot write `PROGRESS.md` either** — it only
+states a verdict in its own output: PASS with citations (e.g. "BE-016–019 confirmed at
+assign.ts:40-95, re-ran `npm test -- assign`: 12/12 pass") or BLOCK with a specific reason (e.g.
+"BE-018 requires the *larger* of percent/flat tolerance; the diff only checks percent" or "claimed
+tests pass, but re-running `npm test -- assign` shows 2 failures"). Step 6 (still `--profile build`)
+is what actually transcribes that verdict into `PROGRESS.md` and decides whether to push. If it's a
+BLOCK, the row stays `In Progress`, the specific gap goes in the row's Note column, nothing gets
+pushed, and the same row is retried next turn — do not push a known mismatch and fix it later.
 
 This per-row check only confirms the one row just built. It does not, by itself, guarantee nothing
 upstream regressed or that the checklist's own row-grouping covered every requirement in the PRD —

@@ -57,13 +57,15 @@ First message to send in the app window:
 ```
 Read AGENTS.md, then .prd_loop/GOAL.md and .prd_loop/CHECKLIST.md in full, then
 .prd_loop/PROGRESS.md for current status. Starting from the next Missing row, work
-GOAL.md's plan-build-test-commit-push cycle: actually run each row's tests and show real
-output, don't just assert they pass. Run the read-only verifier pass on your own work (act
-as the .codex/config.toml [profiles.verifier] role — independently re-read the PRD and
-re-run the tests yourself) before marking a row Done. After finishing a row, automatically
-continue to the next Missing row without waiting for me to say "continue" — only stop and
-ask if you hit an AGENTS.md Tier 2 situation. Run AGENTS.md's pre-turn-end self-check and
-update PROGRESS.md after every row regardless of outcome.
+GOAL.md's plan-build-test cycle: actually run each row's tests and show real output, don't
+just assert they pass. Commit locally once tests pass, but do NOT push yet. Then act as an
+independent verifier on your own work — re-read the PRD text fresh and re-run the tests
+again, skeptically, as if checking someone else's claim — before deciding pass or fail. Only
+if that independent check passes should you update PROGRESS.md to Done and push; if it
+doesn't pass, leave the row In Progress, note the gap, and do not push. After finishing a
+row, automatically continue to the next Missing row without waiting for me to say
+"continue" — only stop and ask if you hit an AGENTS.md Tier 2 situation. Run AGENTS.md's
+pre-turn-end self-check and update PROGRESS.md after every row regardless of outcome.
 ```
 
 If it stops and waits for you anyway (the unverified behavior flagged above), this gets it going
@@ -90,9 +92,14 @@ codex                            # sign in with ChatGPT the first time
 ./scripts/run-loop.sh
 ```
 
-What it does each iteration: runs a `--profile build` turn, then a `--profile verifier` turn,
-tees both to `run-logs/` (gitignored), and checks `.prd_loop/PROGRESS.md` for real progress. It
-stops itself — not just runs forever — in three cases:
+What it does each iteration — three sub-steps, not two: a `--profile build` turn (build, actually
+run tests, commit **locally only**), a `--profile verifier` turn (read-only, independently re-runs
+the tests itself, states a plain PASS/BLOCK verdict — it cannot write files or push), then a second
+`--profile build` turn that reads that verdict and either records `Done` + pushes (PASS) or records
+`In Progress` + the specific gap and does **not** push (BLOCK). All three are logged to
+`run-logs/` (gitignored). The point of this order: nothing reaches the shared remote until an
+independent re-check has actually passed. The loop checks `.prd_loop/PROGRESS.md` for real
+progress after each iteration and stops itself — not just runs forever — in three cases:
 - **Done**: no rows left `Missing`/`In Progress`.
 - **Stalled**: no row count change for `STALL_LIMIT` turns (default 3) — nearly always means
   something got logged under "Escalations to human" or "Open questions blocking progress" that

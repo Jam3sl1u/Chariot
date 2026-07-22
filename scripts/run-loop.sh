@@ -3,8 +3,14 @@
 #
 # Why this exists: Codex CLI has no native "keep going across turns until done" feature and no
 # turn/token budget cap (verified against the official docs — see AGENTS.md). GOAL.md's cycle is
-# designed as one row per `codex exec` invocation, so "unattended for everything" means an external
-# driver re-invoking codex, not a single long-running codex session. This script is that driver.
+# designed as one row per turn, so "unattended for everything" means an external driver
+# re-invoking codex, not a single long-running codex session. This script is that driver.
+#
+# Each turn is three codex invocations, not one — build (workspace-write: build, actually run
+# tests, commit LOCALLY only, no push) -> verify (read-only: independently re-runs the tests
+# itself, states a plain PASS/BLOCK verdict, cannot write files or push) -> finalize
+# (workspace-write again: reads the verdict, records it in PROGRESS.md, and only runs `git push`
+# on PASS). Nothing reaches the shared remote without an independent re-check passing first.
 #
 # Usage:
 #   ./scripts/run-loop.sh                 # run with defaults
@@ -43,20 +49,28 @@ is_complete() {
 BUILD_PROMPT='Read AGENTS.md if you have not already this session — it governs when to proceed
 alone versus stop and ask, and lists a mandatory self-check to run before ending this turn. Read
 .prd_loop/GOAL.md and .prd_loop/CHECKLIST.md in full, then .prd_loop/PROGRESS.md for current
-status. Work the next Missing row per GOAL.md plan-build-test-commit-push cycle, respecting
-CHECKLIST.md dependency order. Actually execute the row'"'"'s tests and show real output — do not
-assert they pass without having run them this turn. If you hit an AGENTS.md Tier 2 situation, log
-it in PROGRESS.md (Open questions blocking progress, or Escalations to human) and stop this turn
-rather than guessing — do not fabricate an answer. Run AGENTS.md'"'"'s pre-turn-end self-check,
-then update PROGRESS.md before finishing regardless of outcome.'
+status. Work the next Missing row per GOAL.md plan-build-test cycle, respecting CHECKLIST.md
+dependency order. Actually execute the row'"'"'s tests and show real output — do not assert they
+pass without having run them this turn. If you hit an AGENTS.md Tier 2 situation, log it in
+PROGRESS.md (Open questions blocking progress, or Escalations to human) and stop this turn rather
+than guessing — do not fabricate an answer. Once tests pass, commit locally with a message
+referencing the row number and requirement IDs — do NOT push yet, that happens later only if
+verification passes. Note in PROGRESS.md that this row is awaiting verification.'
 
-VERIFY_PROMPT='Check .prd_loop/PROGRESS.md Turn log for the row(s) touched in the most recent
-commit. Independently re-read documentation/Chariot_PRD_v1.3.md for that row'"'"'s requirement
-IDs (not CHECKLIST.md'"'"'s paraphrase). Re-run the row'"'"'s actual test command yourself — do not
-take the build turn'"'"'s claimed output on faith — and confirm the diff and the real test output
-match the PRD text, citing specifics (file/line, exact command, pass/fail counts). Update
-PROGRESS.md'"'"'s Verifier check column and status accordingly — only Done if it genuinely
-matches and you personally observed the tests pass.'
+VERIFY_PROMPT='Check .prd_loop/PROGRESS.md Turn log / recent git log for the row just built.
+Independently re-read documentation/Chariot_PRD_v1.3.md for that row'"'"'s requirement IDs (not
+CHECKLIST.md'"'"'s paraphrase). Re-run the row'"'"'s actual test command yourself — do not take the
+build turn'"'"'s claimed output on faith — and confirm the diff and the real test output match the
+PRD text. You are read-only: do not attempt to edit any file or push anything. State your verdict
+plainly as the last thing you output: either "VERDICT: PASS" followed by citations (file/line,
+exact command, pass/fail counts), or "VERDICT: BLOCK" followed by the specific gap.'
+
+FINALIZE_PROMPT_TEMPLATE='Read the verifier output saved at %s — that is its actual verdict on the
+row just built, not a summary. If it says VERDICT: PASS, update .prd_loop/PROGRESS.md now (status
+Done, Verifier check column with the citations from that file, Turn log with the commit SHA), then
+run git push. If it says VERDICT: BLOCK, update PROGRESS.md (status stays In Progress, Note column
+gets the specific gap from that file) and do NOT push under any circumstance. If the verdict is
+ambiguous or missing, treat it as BLOCK rather than guessing PASS.'
 
 last_done=-1
 stall_streak=0
@@ -68,11 +82,17 @@ for ((turn = 1; turn <= MAX_TURNS; turn++)); do
   fi
 
   ts="$(date +%Y%m%d-%H%M%S)"
-  echo "=== Turn $turn ($ts) — build ==="
+  verify_log="$LOG_DIR/turn-${turn}-verify-${ts}.log"
+
+  echo "=== Turn $turn ($ts) — build (test + local commit, no push) ==="
   codex --profile build exec "$BUILD_PROMPT" 2>&1 | tee "$LOG_DIR/turn-${turn}-build-${ts}.log"
 
-  echo "=== Turn $turn ($ts) — verify ==="
-  codex --profile verifier exec "$VERIFY_PROMPT" 2>&1 | tee "$LOG_DIR/turn-${turn}-verify-${ts}.log"
+  echo "=== Turn $turn ($ts) — verify (read-only, independent) ==="
+  codex --profile verifier exec "$VERIFY_PROMPT" 2>&1 | tee "$verify_log"
+
+  echo "=== Turn $turn ($ts) — finalize (record verdict, push only if PASS) ==="
+  finalize_prompt="$(printf "$FINALIZE_PROMPT_TEMPLATE" "$verify_log")"
+  codex --profile build exec "$finalize_prompt" 2>&1 | tee "$LOG_DIR/turn-${turn}-finalize-${ts}.log"
 
   current_done="$(done_count)"
   if [ "$current_done" -eq "$last_done" ]; then
