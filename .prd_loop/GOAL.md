@@ -35,10 +35,12 @@ this fixed sequence:
    structure described in the PRD's §2.1/2.4 if it doesn't exist yet). Match the PRD's stated
    stack, schema, routes, and behavior exactly — do not substitute a different design because it
    seems easier, and do not silently narrow scope.
-3. **Test** — write and run the test coverage the PRD's §12 assigns to this row's Test IDs (Jest
-   unit/integration, Playwright E2E, Artillery load, or security tests, as applicable). All tests
-   for this row must pass locally before moving on. A row is not buildable-complete without its
-   tests — "build" and "test" are one step, not two rows.
+3. **Test** — write and *actually execute* the test coverage the PRD's §12 assigns to this row's
+   Test IDs (Jest unit/integration, Playwright E2E, Artillery load, or security tests, as
+   applicable). Run the real command and show its real output (pass/fail counts) — do not assert
+   "tests pass" without having run them in this turn. All tests for this row must pass locally
+   before moving on. A row is not buildable-complete without its tests — "build" and "test" are one
+   step, not two rows. See `../AGENTS.md`'s mandatory self-check before ending the turn.
 4. **Commit & push** — commit the row's changes with a message referencing the row number and
    requirement IDs (e.g. `Row 07: detour-cost algorithm core (BE-001–BE-024)`), then push. If the
    repo has CI wired up (row 42) and branch protection on `main`, push a branch and open a PR so CI
@@ -55,14 +57,18 @@ this fixed sequence:
 
 Every row moved to `Done` in a given turn must first be checked by the read-only verifier profile.
 The verifier's job: **independently re-read the actual PRD text** for that row's requirement IDs
-(not `CHECKLIST.md`'s paraphrase — go back to `documentation/Chariot_PRD_v1.3.md` itself), read the
-actual diff and the tests that were run, and confirm they match line-by-line — it does not write or
-fix code, only approves or blocks with a specific reason (e.g. "BE-018 requires the *larger* of
-percent/flat tolerance; the diff only checks percent"). Record that specific citation in
-`PROGRESS.md`'s Verifier check column (which PRD requirement, which file/line it maps to, which
-tests confirmed it) — not just a checkmark, since an unspecific "✓" gives no way to audit the check
-later. If it blocks, the row stays `In Progress`, the specific gap goes in the row's Note column,
-and the same row is retried next turn — do not move on with a known mismatch.
+(not `CHECKLIST.md`'s paraphrase — go back to `documentation/Chariot_PRD_v1.3.md` itself), **re-run
+the row's actual test command itself** (don't just read the build turn's claimed output — its
+`sandbox_mode = "read-only"` still permits executing a test command; `approval_policy = "untrusted"`
+means it will prompt before doing so, which is expected, not a failure), and confirm the diff and
+the real test output match the PRD line-by-line — it does not write or fix code, only approves or
+blocks with a specific reason (e.g. "BE-018 requires the *larger* of percent/flat tolerance; the
+diff only checks percent" or "claimed tests pass, but re-running `npm test -- assign` shows 2
+failures"). Record that specific citation in `PROGRESS.md`'s Verifier check column (which PRD
+requirement, which file/line it maps to, the actual test command and result it independently
+observed) — not just a checkmark, since an unspecific "✓" gives no way to audit the check later. If
+it blocks, the row stays `In Progress`, the specific gap goes in the row's Note column, and the same
+row is retried next turn — do not move on with a known mismatch.
 
 This per-row check only confirms the one row just built. It does not, by itself, guarantee nothing
 upstream regressed or that the checklist's own row-grouping covered every requirement in the PRD —

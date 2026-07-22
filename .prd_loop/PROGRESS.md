@@ -9,11 +9,13 @@ requirement-ID cross-check has passed, and Phase 7 (row 48) is Done.
 Status values: `Missing` | `In Progress` | `Done` | `Skipped` | `N/A`
 
 Per-turn cycle for whichever row is picked: **plan → build → test → commit → push → next row.**
-See `GOAL.md` for the full definition of each step. Do not mark a row Done until its tests pass
-and the verifier profile has independently re-read the cited PRD requirement IDs (not just this
-table's paraphrase) and confirmed the diff matches. The **Verifier check** column should record
-specifics (e.g. "✓ BE-016–019 @ assign.ts:40-95, TEST-030/031 pass"), not just a checkmark — that
-citation is what makes the check auditable later, not just self-reported.
+See `GOAL.md` for the full definition of each step. Do not mark a row Done until its tests have
+actually been *executed* (not just written) and the verifier profile has independently re-run them
+itself, re-read the cited PRD requirement IDs (not just this table's paraphrase), and confirmed the
+diff matches. The **Verifier check** column should record specifics (e.g. "✓ BE-016–019 @
+assign.ts:40-95, re-ran `npm test -- assign`: 12/12 pass"), not just a checkmark — that citation,
+including the actual test command and result the verifier itself observed, is what makes the check
+auditable later instead of self-reported. See `../AGENTS.md`'s mandatory pre-turn-end self-check.
 
 | # | Phase | Build item | Status | Verifier check | Note / rationale |
 |---|---|---|---|---|---|

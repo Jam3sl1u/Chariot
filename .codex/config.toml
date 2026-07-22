@@ -6,14 +6,21 @@
 # Normal build/test/commit/push turns (.prd_loop/GOAL.md's per-turn cycle). Full autonomy for
 # command execution, contained to this repo — command-level autonomy is separate from the
 # product/design judgment calls governed by AGENTS.md's two-tier approval rules.
+# gpt-5.6-sol: OpenAI's flagship reasoning tier — "start here for demanding agents... ambiguous,
+# multi-step work that needs planning, tool use, validation, and follow-through." Matches what
+# most rows actually require (real engineering judgment, not just typing out a known pattern).
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
 sandbox_mode = "workspace-write"
 approval_policy = "never"
-model_reasoning_effort = "high"
 
 [profiles.verifier]
 # Read-only review pass: independently re-reads the PRD and confirms a row's diff + tests match
 # before it's marked Done (GOAL.md's Verification section). Always prompts — this profile should
 # never be able to write, so "untrusted" here is a deliberate belt-and-suspenders, not friction.
+# gpt-5.6-terra: balanced/cost-efficient tier, documented as well-suited to read-heavy scans and
+# large-file review — exactly the verifier's job (re-read the PRD, compare against a diff).
+model = "gpt-5.6-terra"
+model_reasoning_effort = "high"
 sandbox_mode = "read-only"
 approval_policy = "untrusted"
-model_reasoning_effort = "high"

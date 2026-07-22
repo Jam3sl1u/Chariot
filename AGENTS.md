@@ -58,6 +58,26 @@ There's no special approval-gate feature for this — it's just judgment, surfac
    while the question is open. Only genuinely idle if every remaining row transitively depends on
    the answer.
 
+## Before you end any turn — mandatory self-check
+
+Don't rely on judgment alone in the moment; run through this explicitly before moving to the next
+row or ending the session:
+
+1. **Did I actually run the tests, or did I just write them?** A row is not Done on the strength of
+   test code existing — paste the real command and its real output (pass/fail counts, not "tests
+   should pass") into your turn's own output before claiming the row is complete. If you didn't run
+   something, say so plainly rather than letting it read as if you did.
+2. **Did I hit any Tier 2 trigger above, even partially?** Re-read the list. If yes and you proceeded
+   anyway, stop now, back the row out to `In Progress`, and log it per "How to ask" instead of
+   continuing forward on an assumption.
+3. **Did I update `.prd_loop/PROGRESS.md` with specifics** (which requirement IDs, which file/line,
+   which test command and result — not just a status flip) **and append a Turn log line**, in this
+   same turn? If not, do that now before finishing.
+4. **Am I about to say "Done" without the verifier profile having actually re-run anything?** The
+   verifier (`codex --profile verifier`) is expected to independently execute the row's test
+   command itself, not just read the diff and take the build turn's word for it — if that hasn't
+   happened yet, the row stays `In Progress`, not `Done`.
+
 ## Command-level autonomy (separate from the above)
 
 The two tiers above are about product/design judgment calls — a different thing from whether Codex

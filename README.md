@@ -26,7 +26,86 @@ trusting a budget signal to stop it for you.
 
 Because `.prd_loop/` isn't repo root, Codex won't discover those specific files by default —
 `AGENTS.md` *is* auto-loaded and tells Codex where to find them, but you still need to kick off work
-on a given turn explicitly:
+on a given turn explicitly.
+
+## Running it via the Codex desktop app window (not the CLI)
+
+`config.toml` profiles and `AGENTS.md` are shared across the desktop app, CLI, IDE extension, and
+SDK — confirmed the same source of truth either way. What's different in the app:
+
+- **Model**: pick it from the composer's model dropdown before sending your first message. Use
+  **GPT-5.6 Sol** (flagship reasoning tier) for normal build turns — matches `[profiles.build]`'s
+  `model = "gpt-5.6-sol"`. Switch to **GPT-5.6 Terra** (balanced/cheaper, documented as strong for
+  read-heavy review) for a verification pass — matches `[profiles.verifier]`. I can't confirm the
+  app has a profile-selector UI that reads `[profiles.build]`/`[profiles.verifier]` automatically
+  the way `codex --profile X` does on the CLI — safest bet is to pick the model by hand each time.
+- **No confirmed background/unattended-loop feature in the app itself.** The docs describe
+  multi-turn work as needing manual follow-up messages, not autonomous continuation — so
+  `scripts/run-loop.sh` (built for the CLI's `codex exec`) has no direct equivalent here. Two ways
+  to still get "mostly unattended" out of the app:
+  1. In your **first message**, explicitly tell it not to stop and wait after finishing a row —
+     to automatically move to the next `Missing` row per `GOAL.md` and only pause for a genuine
+     `AGENTS.md` Tier 2 situation. Whether it actually keeps chaining rows across a long session
+     without pausing depends on the app's own turn-taking behavior, which I haven't been able to
+     verify directly — watch the first few rows to see how far it goes before stopping on its own.
+  2. **Pair Codex Remote** (desktop app sidebar → "Set up Remote" → scan the QR code with the
+     ChatGPT mobile app). This is the realistic "walk away" pattern for the GUI path: start the
+     session, then handle approvals and Tier-2 escalations from your phone instead of sitting at
+     the machine — genuinely real and GA, unlike the fictional features from earlier.
+
+First message to send in the app window:
+```
+Read AGENTS.md, then .prd_loop/GOAL.md and .prd_loop/CHECKLIST.md in full, then
+.prd_loop/PROGRESS.md for current status. Starting from the next Missing row, work
+GOAL.md's plan-build-test-commit-push cycle: actually run each row's tests and show real
+output, don't just assert they pass. Run the read-only verifier pass on your own work (act
+as the .codex/config.toml [profiles.verifier] role — independently re-read the PRD and
+re-run the tests yourself) before marking a row Done. After finishing a row, automatically
+continue to the next Missing row without waiting for me to say "continue" — only stop and
+ask if you hit an AGENTS.md Tier 2 situation. Run AGENTS.md's pre-turn-end self-check and
+update PROGRESS.md after every row regardless of outcome.
+```
+
+If it stops and waits for you anyway (the unverified behavior flagged above), this gets it going
+again without re-explaining everything:
+```
+Continue — re-read .prd_loop/PROGRESS.md for current status and keep working the next
+Missing row per the same cycle, still without stopping between rows unless it's a genuine
+AGENTS.md Tier 2 situation.
+```
+
+## Running it unattended via the CLI
+
+A single `codex exec` call does one row (that's deliberate — GOAL.md's quality rule is one row per
+turn). Repeatedly re-invoking Codex until the checklist is done needs an external driver since
+Codex CLI has no native multi-turn loop either. That driver is
+[`scripts/run-loop.sh`](scripts/run-loop.sh):
+
+```bash
+# one-time setup
+npm install -g @openai/codex     # or: brew install --cask codex
+codex                            # sign in with ChatGPT the first time
+
+# then, from the repo root:
+./scripts/run-loop.sh
+```
+
+What it does each iteration: runs a `--profile build` turn, then a `--profile verifier` turn,
+tees both to `run-logs/` (gitignored), and checks `.prd_loop/PROGRESS.md` for real progress. It
+stops itself — not just runs forever — in three cases:
+- **Done**: no rows left `Missing`/`In Progress`.
+- **Stalled**: no row count change for `STALL_LIMIT` turns (default 3) — nearly always means
+  something got logged under "Escalations to human" or "Open questions blocking progress" that
+  needs your decision. The script prints that section directly so you don't have to go find it.
+- **Safety cap**: `MAX_TURNS` reached (default 80, override with `MAX_TURNS=200 ./scripts/run-loop.sh`)
+  — this is the turn-budget cap Codex CLI itself doesn't provide.
+
+Safe to Ctrl+C and re-run any time — it picks up wherever `PROGRESS.md` says it left off. Run it in
+a background terminal, `tmux`/`screen` session, or `nohup ./scripts/run-loop.sh &` if you want it
+to survive closing your terminal; pair Codex Remote if you want to check on it or resolve a stall
+from your phone instead of the machine itself.
+
+A single-turn manual invocation still works too, if you'd rather step through by hand:
 
 ```
 codex --profile build exec "Read AGENTS.md if you haven't already this session. Read
