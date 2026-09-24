@@ -78,21 +78,21 @@ auditable later instead of self-reported. See `../AGENTS.md`'s mandatory pre-tur
 
 ## Scoped MVP request — M.2 / M.3
 
-- Status: **In Progress — implementation and build tests passed; independent verifier pending**.
+- Status: **In Progress — implementation and build tests passed; verifier profile cannot start**.
   This is the user's explicitly requested MVP-000–004 task, not a start of the
   unrelated full-platform checklist. Full-platform rows above remain unchanged.
-- MVP-000: `src/service.ts` (`resolve`, `run`, `patch`) resolves every mutation's
+- MVP-000: `src/service.ts:17` (`resolve`, `run`, `patch`) resolves every mutation's
   guild via Churches, rejects unknown/ambiguous mappings and tags writes with churchId.
-  `src/bot.ts` (`message`) routes DMs only through saved, user-bound prompt context.
+  `src/bot.ts:187` (`message`) routes DMs only through saved, user-bound prompt context.
 - MVP-001 / BOT-001–009 as adapted by §29: `src/bot.ts` registration modal, live
   church-scoped Zones dropdown and Discord-only preference; `src/service.ts`
-  `register` upserts by churchId + discordId and validates US E.164 phones.
+  `register` (`src/service.ts:50`) upserts by churchId + discordId and validates US E.164 phones.
 - MVP-002/003 / BOT-010–021: weekly post/scheduling/recovery, ✅ cancellation/re-add,
   guest name/phone/update/removal, persisted prompt IDs, startup and `/rides sync`
-  reconciliation in `src/bot.ts`, `src/service.ts`, `src/time.ts`.
+  reconciliation in `src/bot.ts:219`, `src/bot.ts:241`, `src/service.ts:67`, `src/time.ts`.
 - MVP-004 / BOT-022–030 as adapted by §29 and the user's algorithm exclusion:
   church-local Thursday asks, weekly reset, exact YES/NO parsing, scoped availability
-  updates, nonresponder resends and manual Sheet overrides. Late YES records availability
+  updates (`src/service.ts:97`), nonresponder resends and manual Sheet overrides. Late YES records availability
   and directs the driver to an admin; no assignment/autofill is invoked.
 - Credentials: `.env.example` has exactly the three requested keys blank;
   `src/config.ts` and `src/sheets.ts` load them. Key and environment files are ignored.
@@ -106,6 +106,12 @@ auditable later instead of self-reported. See `../AGENTS.md`'s mandatory pre-tur
 - Live manual testing remains required: `.env` and `service-account-key.json` were
   absent in this checkout. Exact steps: `docs/discord-bot.md`, “Exact manual acceptance test”.
 - No push authorized/requested here. Stop after this scoped implementation and local commit.
+- Implementation commit: `0781088`. Attempted independent verification using
+  `codex --profile verifier -a never exec --ephemeral ...`; the CLI refused to start
+  with **`Error: approval_policy = "untrusted" is no longer supported; remove this setting`**.
+  The saved user verifier profile contains that legacy setting, and the command-line
+  override did not bypass its validation. No verifier model ran or executed tests,
+  so there is no PASS/BLOCK verdict. Did not edit James's global profile; did not push.
 
 ## Turn log
 *(Codex: append one line per turn — turn #, row(s) touched, outcome, commit SHA)*
@@ -113,7 +119,9 @@ auditable later instead of self-reported. See `../AGENTS.md`'s mandatory pre-tur
 - Turn 1: Workflow setup — installed the stable Codex CLI launcher, migrated build/verifier profiles to user-scoped profile files, and corrected the runner’s Row 00 handling and verifier-before-push documentation. No checklist row was started; no commit or push was made.
 - Turn 2 (2026-09-24): M.2/M.3 scoped implementation, MVP-000–004; user approved supporting
   schema columns. Build tests: 20 passed, 0 failed; typecheck exit 0. Local implementation
-  commit pending at time of this entry; independent verifier pending. No push or algorithm work.
+  commit `0781088`; independent verifier failed to start due to unsupported legacy
+  `untrusted` approval policy in the saved profile. Recorded status In Progress;
+  no verifier PASS claimed. No push or algorithm work. Final log-only commit records this outcome.
 
 ## Escalations to human
 *(Codex: log anything you surfaced for remote approval/decision, and the outcome once resolved)*
@@ -121,6 +129,10 @@ auditable later instead of self-reported. See `../AGENTS.md`'s mandatory pre-tur
 - M.2/M.3 schema mismatch (AGENTS.md Tier 2): Section 29.5 omits state required by
   Section 4. Asked whether to add the needed columns; James answered “Add the required
   columns (recommended)” in this turn. Resolved; no blocking product question remains.
+- M.2/M.3 verification: saved `~/.codex/verifier.config.toml` uses an approval policy
+  the installed CLI no longer supports. The independent verifier cannot start until
+  that profile is migrated. Build code is committed and 20 tests pass; live checks
+  and a genuine independent verifier run remain outstanding.
 
 - Row 00 (Telnyx Toll-Free Verification): this is a real-world business verification submitted
   through Telnyx's portal, not something Codex can do from the repo. Flagged immediately per
