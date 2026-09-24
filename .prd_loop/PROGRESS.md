@@ -1,6 +1,6 @@
 # Chariot Build Loop Progress Log
 
-Last updated: *(Codex: update this timestamp every turn)*
+Last updated: 2026-07-22 10:13 -07:00
 Overall status: **NOT COMPLETE** — flip to **COMPLETE** only when every applicable row below is
 Done or Skipped/N/A with rationale, the verifier has signed off on each, row 45's full
 requirement-ID cross-check has passed, and Phase 7 (row 48) is Done.
@@ -77,7 +77,7 @@ auditable later instead of self-reported. See `../AGENTS.md`'s mandatory pre-tur
 ## Turn log
 *(Codex: append one line per turn — turn #, row(s) touched, outcome, commit SHA)*
 
-- Turn 1: —
+- Turn 1: Workflow setup — installed the stable Codex CLI launcher, migrated build/verifier profiles to user-scoped profile files, and corrected the runner’s Row 00 handling and verifier-before-push documentation. No checklist row was started; no commit or push was made.
 
 ## Escalations to human
 *(Codex: log anything you surfaced for remote approval/decision, and the outcome once resolved)*

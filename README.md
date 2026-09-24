@@ -12,14 +12,14 @@ software, one checklist row at a time, with a `plan → build → test → commi
 | [`.prd_loop/GOAL.md`](.prd_loop/GOAL.md) | The durable objective and the per-turn plan/build/test/commit/push cycle. |
 | [`.prd_loop/CHECKLIST.md`](.prd_loop/CHECKLIST.md) | The dependency-ordered build checklist (49 rows, Phase 0–7), each row mapped to exact PRD requirement IDs, plus a final full-coverage cross-check row (45). |
 | [`.prd_loop/PROGRESS.md`](.prd_loop/PROGRESS.md) | Status table Codex updates every turn — the mechanism that tracks what's Done/Missing/Skipped and drives the next row picked. |
-| [`.codex/config.toml`](.codex/config.toml) | Two real profiles: `build` (autonomous command execution within the repo) and `verifier` (read-only, always prompts). |
+| `~/.codex/build.config.toml` and `~/.codex/verifier.config.toml` | CLI profiles: `build` (autonomous command execution within the repo) and `verifier` (read-only, always prompts). |
 
 ## Correcting the earlier plan
 
 The original setup for this loop assumed a `/goal` command and a `rollout_budget` config key. Neither
 exists — verified directly against OpenAI's official Codex CLI documentation (not secondary blogs).
-What's actually real and now reflected here: `AGENTS.md` auto-loading, `[profiles.NAME]` in
-`config.toml` with real `sandbox_mode`/`approval_policy` values, and Codex Remote (ChatGPT mobile
+What's actually real and now reflected here: `AGENTS.md` auto-loading, user-scoped
+`~/.codex/<profile>.config.toml` files with real `sandbox_mode`/`approval_policy` values, and Codex Remote (ChatGPT mobile
 pairing for monitoring/approving a running session from your phone — genuinely real, GA). There is
 **no native cap** on tokens/turns/time for an unattended run — check in periodically rather than
 trusting a budget signal to stop it for you.
@@ -124,7 +124,7 @@ Verification pass for a row just marked Done:
 ```
 codex --profile verifier exec "Re-read documentation/Chariot_PRD_v1.3.md for row N's requirement
 IDs (see .prd_loop/CHECKLIST.md) and confirm the latest commit's diff + tests actually match the
-PRD text. Report a pass/fail with specific citations, and log the result in PROGRESS.md."
+PRD text. Report a PASS/BLOCK verdict with specific citations. Do not edit files or push."
 ```
 
 ## The per-turn cycle
@@ -136,8 +136,9 @@ For each row in `.prd_loop/PROGRESS.md`:
    permission — `AGENTS.md`'s Tier 2 list (design/product judgment calls) is the only thing that
    should pause a turn.
 3. **Test** — write/run the Jest, Playwright, Artillery, or security tests §12 assigns to that row; must pass before moving on.
-4. **Commit & push** — commit referencing the row number + requirement IDs, then push.
-5. **Verify** — run the `verifier` profile pass (above) before the row is marked Done in `PROGRESS.md`.
+4. **Commit locally** — commit referencing the row number + requirement IDs; do not push yet.
+5. **Verify** — run the `verifier` profile pass before recording Done or pushing.
+6. **Finalize** — record the PASS/BLOCK verdict; push only after PASS.
 6. Move to the next `Missing` row, respecting the dependency order in `CHECKLIST.md`.
 
 Watch the first 2–3 turns to confirm Codex is actually updating `.prd_loop/PROGRESS.md`'s status

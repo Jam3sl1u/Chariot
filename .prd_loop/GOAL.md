@@ -44,12 +44,13 @@ this fixed sequence:
 4. **Commit locally — do not push yet.** Commit the row's changes with a message referencing the
    row number and requirement IDs (e.g. `Row 07: detour-cost algorithm core (BE-001–BE-024)`). This
    step runs under `codex --profile build` (`sandbox_mode = "workspace-write"`,
-   `approval_policy = "never"` — see `../.codex/config.toml`), so it should not stop to ask
+   `approval_policy = "never"` — configured in `~/.codex/build.config.toml`), so it should not stop to ask
    permission for the command itself; `AGENTS.md`'s Tier 2 list is about product/design judgment
    calls, not command execution. **Pushing happens in step 6, only after step 5 passes** — an
    unverified commit sitting locally is cheap to fix; an unverified commit already pushed to a
    shared remote is not, especially once row 42's CI/branch protection exists.
-5. **Verify (independent, read-only)** — see "Verification" below. The verifier profile has
+5. **Verify (independent, read-only)** — see "Verification" below. The verifier profile
+   (`~/.codex/verifier.config.toml`) has
    `sandbox_mode = "read-only"`, which means **it cannot edit `PROGRESS.md` or push anything
    itself** — its output is a verdict (PASS or BLOCK, with citations), not a file write. Capture
    that verdict; it drives step 6.

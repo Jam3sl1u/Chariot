@@ -30,11 +30,18 @@ PROGRESS_FILE=".prd_loop/PROGRESS.md"
 
 mkdir -p "$LOG_DIR"
 
-if ! command -v codex >/dev/null 2>&1; then
-  echo "codex CLI not found on PATH. Install it first:"
-  echo "  npm install -g @openai/codex"
-  echo "  (or: brew install --cask codex)"
-  echo "Then run 'codex' once to sign in before using this script."
+# Prefer the stable launcher supplied by the Windows Codex desktop app. The
+# Microsoft Store package can expose an inaccessible `codex` earlier on PATH.
+CODEX_BIN="${CODEX_BIN:-}"
+if [ -z "$CODEX_BIN" ] && [ -n "${LOCALAPPDATA:-}" ] && [ -f "$LOCALAPPDATA/OpenAI/Codex/bin/codex.cmd" ]; then
+  CODEX_BIN="$LOCALAPPDATA/OpenAI/Codex/bin/codex.cmd"
+fi
+if [ -z "$CODEX_BIN" ]; then
+  CODEX_BIN="$(command -v codex || true)"
+fi
+if [ -z "$CODEX_BIN" ] || ! "$CODEX_BIN" --version >/dev/null 2>&1; then
+  echo "A runnable Codex CLI was not found. Install/sign in to Codex, then retry."
+  echo "You may also set CODEX_BIN to the absolute path of a working codex executable."
   exit 1
 fi
 
@@ -49,7 +56,11 @@ is_complete() {
 BUILD_PROMPT='Read AGENTS.md if you have not already this session — it governs when to proceed
 alone versus stop and ask, and lists a mandatory self-check to run before ending this turn. Read
 .prd_loop/GOAL.md and .prd_loop/CHECKLIST.md in full, then .prd_loop/PROGRESS.md for current
-status. Work the next Missing row per GOAL.md plan-build-test cycle, respecting CHECKLIST.md
+status. Row 00 is a special human-only Telnyx escalation: if it is still Missing, record or refresh
+the escalation and set it to In Progress (not Done or Skipped), then continue in this same turn to
+the next dependency-ready Missing code row. Do not let Row 00 prevent work on Row 01 or later
+independent rows; it remains the Phase 6 gate. For all code rows, work the next Missing row per
+GOAL.md plan-build-test cycle, respecting CHECKLIST.md dependency order.
 dependency order. Actually execute the row'"'"'s tests and show real output — do not assert they
 pass without having run them this turn. If you hit an AGENTS.md Tier 2 situation, log it in
 PROGRESS.md (Open questions blocking progress, or Escalations to human) and stop this turn rather
@@ -85,14 +96,14 @@ for ((turn = 1; turn <= MAX_TURNS; turn++)); do
   verify_log="$LOG_DIR/turn-${turn}-verify-${ts}.log"
 
   echo "=== Turn $turn ($ts) — build (test + local commit, no push) ==="
-  codex --profile build exec "$BUILD_PROMPT" 2>&1 | tee "$LOG_DIR/turn-${turn}-build-${ts}.log"
+  "$CODEX_BIN" --profile build exec "$BUILD_PROMPT" 2>&1 | tee "$LOG_DIR/turn-${turn}-build-${ts}.log"
 
   echo "=== Turn $turn ($ts) — verify (read-only, independent) ==="
-  codex --profile verifier exec "$VERIFY_PROMPT" 2>&1 | tee "$verify_log"
+  "$CODEX_BIN" --profile verifier exec "$VERIFY_PROMPT" 2>&1 | tee "$verify_log"
 
   echo "=== Turn $turn ($ts) — finalize (record verdict, push only if PASS) ==="
   finalize_prompt="$(printf "$FINALIZE_PROMPT_TEMPLATE" "$verify_log")"
-  codex --profile build exec "$finalize_prompt" 2>&1 | tee "$LOG_DIR/turn-${turn}-finalize-${ts}.log"
+  "$CODEX_BIN" --profile build exec "$finalize_prompt" 2>&1 | tee "$LOG_DIR/turn-${turn}-finalize-${ts}.log"
 
   current_done="$(done_count)"
   if [ "$current_done" -eq "$last_done" ]; then
