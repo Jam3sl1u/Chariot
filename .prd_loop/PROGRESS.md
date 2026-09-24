@@ -1,6 +1,6 @@
 # Chariot Build Loop Progress Log
 
-Last updated: 2026-07-22 10:13 -07:00
+Last updated: 2026-09-24 (America/Los_Angeles)
 Overall status: **NOT COMPLETE** — flip to **COMPLETE** only when every applicable row below is
 Done or Skipped/N/A with rationale, the verifier has signed off on each, row 45's full
 requirement-ID cross-check has passed, and Phase 7 (row 48) is Done.
@@ -72,15 +72,55 @@ auditable later instead of self-reported. See `../AGENTS.md`'s mandatory pre-tur
 ## Open questions blocking progress
 *(Codex: log anything you can't resolve yourself here, with which row # it blocks)*
 
-- 
+- None for the requested MVP implementation. User approved adding the supporting
+  columns omitted from §29.5 (timezone/schedule/message context, phone/preferences,
+  guest phone, and durable per-week prompt state). See `docs/discord-bot.md`.
+
+## Scoped MVP request — M.2 / M.3
+
+- Status: **In Progress — implementation and build tests passed; independent verifier pending**.
+  This is the user's explicitly requested MVP-000–004 task, not a start of the
+  unrelated full-platform checklist. Full-platform rows above remain unchanged.
+- MVP-000: `src/service.ts` (`resolve`, `run`, `patch`) resolves every mutation's
+  guild via Churches, rejects unknown/ambiguous mappings and tags writes with churchId.
+  `src/bot.ts` (`message`) routes DMs only through saved, user-bound prompt context.
+- MVP-001 / BOT-001–009 as adapted by §29: `src/bot.ts` registration modal, live
+  church-scoped Zones dropdown and Discord-only preference; `src/service.ts`
+  `register` upserts by churchId + discordId and validates US E.164 phones.
+- MVP-002/003 / BOT-010–021: weekly post/scheduling/recovery, ✅ cancellation/re-add,
+  guest name/phone/update/removal, persisted prompt IDs, startup and `/rides sync`
+  reconciliation in `src/bot.ts`, `src/service.ts`, `src/time.ts`.
+- MVP-004 / BOT-022–030 as adapted by §29 and the user's algorithm exclusion:
+  church-local Thursday asks, weekly reset, exact YES/NO parsing, scoped availability
+  updates, nonresponder resends and manual Sheet overrides. Late YES records availability
+  and directs the driver to an admin; no assignment/autofill is invoked.
+- Credentials: `.env.example` has exactly the three requested keys blank;
+  `src/config.ts` and `src/sheets.ts` load them. Key and environment files are ignored.
+  `src/setup.ts` adds approved headers to existing tabs; no Assignments/Apps Script changes.
+- `assignmentCompletedWeek` is an explicit future integration/admin marker, avoiding a
+  fabricated clock-only assignment completion. Its use is documented; bot never sets it.
+- Actual build validation: `node node_modules/typescript/bin/tsc --noEmit` exited 0
+  (no diagnostics); `node node_modules/tsx/dist/cli.mjs --test tests/*.test.ts`:
+  **tests 20, pass 20, fail 0, skipped 0**. Google client upgrade install audit:
+  **found 0 vulnerabilities**. Tests use doubles, not live credentials.
+- Live manual testing remains required: `.env` and `service-account-key.json` were
+  absent in this checkout. Exact steps: `docs/discord-bot.md`, “Exact manual acceptance test”.
+- No push authorized/requested here. Stop after this scoped implementation and local commit.
 
 ## Turn log
 *(Codex: append one line per turn — turn #, row(s) touched, outcome, commit SHA)*
 
 - Turn 1: Workflow setup — installed the stable Codex CLI launcher, migrated build/verifier profiles to user-scoped profile files, and corrected the runner’s Row 00 handling and verifier-before-push documentation. No checklist row was started; no commit or push was made.
+- Turn 2 (2026-09-24): M.2/M.3 scoped implementation, MVP-000–004; user approved supporting
+  schema columns. Build tests: 20 passed, 0 failed; typecheck exit 0. Local implementation
+  commit pending at time of this entry; independent verifier pending. No push or algorithm work.
 
 ## Escalations to human
 *(Codex: log anything you surfaced for remote approval/decision, and the outcome once resolved)*
+
+- M.2/M.3 schema mismatch (AGENTS.md Tier 2): Section 29.5 omits state required by
+  Section 4. Asked whether to add the needed columns; James answered “Add the required
+  columns (recommended)” in this turn. Resolved; no blocking product question remains.
 
 - Row 00 (Telnyx Toll-Free Verification): this is a real-world business verification submitted
   through Telnyx's portal, not something Codex can do from the repo. Flagged immediately per

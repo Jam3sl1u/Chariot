@@ -2,6 +2,8 @@ run-logs/
 node_modules/
 .env
 .env.local
+.env.*
+!.env.example
 service-account-key.json
 .DS_Store
 *.pem

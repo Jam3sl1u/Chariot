@@ -1,5 +1,9 @@
 # Chariot — Autonomous Build Loop
 
+The Discord + Google Sheets MVP (MVP-000–004) is implemented separately from the
+full-platform loop below. See [bot setup and exact manual tests](docs/discord-bot.md).
+Run `npm ci`, configure `.env`, run `npm run setup:sheets`, then `npm start`.
+
 This repo drives a Codex loop that **builds** the Chariot ride-coordination system against an
 already-finished PRD. Codex does not write the PRD — it reads it as a fixed spec and implements the
 software, one checklist row at a time, with a `plan → build → test → commit → push` cycle per row.
