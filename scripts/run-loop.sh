@@ -69,7 +69,7 @@ referencing the row number and requirement IDs — do NOT push yet, that happens
 verification passes. Note in PROGRESS.md that this row is awaiting verification.'
 
 VERIFY_PROMPT='Check .prd_loop/PROGRESS.md Turn log / recent git log for the row just built.
-Independently re-read documentation/Chariot_PRD_v1.3.md for that row'"'"'s requirement IDs (not
+Independently re-read documentation/prd/Chariot_PRD_v2_3.md for that row'"'"'s requirement IDs (not
 CHECKLIST.md'"'"'s paraphrase). Re-run the row'"'"'s actual test command yourself — do not take the
 build turn'"'"'s claimed output on faith — and confirm the diff and the real test output match the
 PRD text. You are read-only: do not attempt to edit any file or push anything. State your verdict

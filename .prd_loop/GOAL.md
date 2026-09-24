@@ -2,7 +2,7 @@
 
 ## Objective
 Implement the Chariot ride-coordination system exactly as specified in
-[`documentation/Chariot_PRD_v1.3.md`](../documentation/Chariot_PRD_v1.3.md) ("the PRD").
+[`documentation/prd/Chariot_PRD_v2_3.md`](../documentation/prd/Chariot_PRD_v2_3.md) ("the PRD").
 
 **The PRD is a finished, fixed input — not something Codex writes or edits.** It is already complete
 (50/50 on the completeness standard) and is the sole source of requirements. Codex's job is to
@@ -67,7 +67,7 @@ this fixed sequence:
 Every row must be checked by the read-only verifier profile **before it is pushed**, not just
 before it's marked `Done`. The verifier's job: **independently re-read the actual PRD text** for
 that row's requirement IDs (not `CHECKLIST.md`'s paraphrase — go back to
-`documentation/Chariot_PRD_v1.3.md` itself), **re-run the row's actual test command itself** (don't
+`documentation/prd/Chariot_PRD_v2_3.md` itself), **re-run the row's actual test command itself** (don't
 just read the build turn's claimed output — its `sandbox_mode = "read-only"` still permits
 executing a test command; `approval_policy = "untrusted"` means it will prompt before doing so,
 which is expected, not a failure), and confirm the diff and the real test output match the PRD

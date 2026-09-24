@@ -1,0 +1,17 @@
+{
+  "name": "chariot",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "verify:sheets": "tsx --env-file=.env verification-script.ts",
+    "typecheck:verification": "tsc --noEmit"
+  },
+  "dependencies": {
+    "googleapis": "^144.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
