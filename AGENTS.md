@@ -11,7 +11,7 @@ you need James in the loop for a given action.
 ### Tier 1 — proceed without asking
 
 This covers the large majority of work:
-- Any `.prd_loop/CHECKLIST.md` row whose requirement IDs and PRD text (`documentation/Chariot_PRD_v1.3.md`)
+- Any `.prd_loop/CHECKLIST.md` row whose requirement IDs and PRD text (`documentation/prd/Chariot_PRD_v2_3.md`)
   fully specify the behavior — build it, test it, commit it, push it, update `PROGRESS.md`. No
   check-in needed.
 - Routine implementation choices *within* what the PRD already specifies — file layout inside the

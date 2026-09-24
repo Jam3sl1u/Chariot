@@ -2,3 +2,6 @@ run-logs/
 node_modules/
 .env
 .env.local
+service-account-key.json
+.DS_Store
+*.pem

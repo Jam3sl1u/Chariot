@@ -7,7 +7,7 @@ software, one checklist row at a time, with a `plan → build → test → commi
 | Path | Purpose |
 |---|---|
 | [`AGENTS.md`](AGENTS.md) | **Auto-read by Codex every session** (confirmed real Codex CLI behavior). Defines the two-tier rule for when Codex proceeds on its own vs. stops to ask a human — read this first. |
-| [`documentation/Chariot_PRD_v1.3.md`](documentation/Chariot_PRD_v1.3.md) | The finished PRD — sole source of requirements. Codex reads from this; it does not edit it. |
+| [`documentation/prd/Chariot_PRD_v2_3.md`](documentation/prd/Chariot_PRD_v2_3.md) | The finished PRD — sole source of requirements. Codex reads from this; it does not edit it. |
 | [`documentation/seed-data/`](documentation/seed-data/) | Pilot church's 19-point pickup registry + pairwise distances, provided directly rather than computed via any API. |
 | [`.prd_loop/GOAL.md`](.prd_loop/GOAL.md) | The durable objective and the per-turn plan/build/test/commit/push cycle. |
 | [`.prd_loop/CHECKLIST.md`](.prd_loop/CHECKLIST.md) | The dependency-ordered build checklist (49 rows, Phase 0–7), each row mapped to exact PRD requirement IDs, plus a final full-coverage cross-check row (45). |
@@ -122,7 +122,7 @@ status. Work the next Missing row per GOAL.md's cycle, then update PROGRESS.md b
 
 Verification pass for a row just marked Done:
 ```
-codex --profile verifier exec "Re-read documentation/Chariot_PRD_v1.3.md for row N's requirement
+codex --profile verifier exec "Re-read documentation/prd/Chariot_PRD_v2_3.md for row N's requirement
 IDs (see .prd_loop/CHECKLIST.md) and confirm the latest commit's diff + tests actually match the
 PRD text. Report a pass/fail with specific citations, and log the result in PROGRESS.md."
 ```

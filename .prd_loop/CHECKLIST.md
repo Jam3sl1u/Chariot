@@ -1,6 +1,6 @@
 # Chariot Build Checklist (Verifier Acceptance Criteria)
 
-Source of truth: [`documentation/Chariot_PRD_v1.3.md`](../documentation/Chariot_PRD_v1.3.md) ("the
+Source of truth: [`documentation/prd/Chariot_PRD_v2_3.md`](../documentation/prd/Chariot_PRD_v2_3.md) ("the
 PRD"). This file is NOT a PRD-completeness checklist — the PRD is already complete and is the fixed
 input spec. This is a **build checklist**: every row is an implementation increment, derived from
 the PRD's own Build Order (§18), expanded into concrete units of work small enough to plan → build
