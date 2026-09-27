@@ -40,7 +40,11 @@ export class Bot {
 
   private report(context: string, error: unknown) {
     // Never dump Google/Discord HTTP errors: they may contain credentials or personal data.
-    console.error(`${context}: ${error instanceof InputError ? error.message : 'operation failed; check configuration, permissions and connectivity'}`);
+    if (error instanceof InputError) { console.error(`${context}: ${error.message}`); return; }
+    const details = error && typeof error === 'object' ? error as { code?: unknown; status?: unknown } : {};
+    const code = typeof details.code === 'number' || typeof details.code === 'string' ? `; code ${details.code}` : '';
+    const status = typeof details.status === 'number' ? `; HTTP ${details.status}` : '';
+    console.error(`${context}: operation failed; check configuration, permissions and connectivity${code}${status}`);
   }
   private async dm(userId: string, content: string, components: ActionRowBuilder<ButtonBuilder>[] = []) {
     return (await this.client.users.fetch(userId)).send({ content, components, allowedMentions: { parse: [] } });
