@@ -280,7 +280,16 @@ export class Bot {
   async reconcile(church: Row) {
     const week = weekDate(church, this.service.now());
     if (!church.activeMessageId || church.activeWeekDate !== week) return;
-    const message = await (await this.channel(church)).messages.fetch(church.activeMessageId);
+    let message: Message;
+    try { message = await (await this.channel(church)).messages.fetch(church.activeMessageId); }
+    catch (error) {
+      const code = error && typeof error === 'object' ? (error as { code?: unknown }).code : undefined;
+      if (code === 10008) {
+        await this.service.patch('Churches', church, {}, { activeMessageId: '', activeWeekDate: '' });
+        return;
+      }
+      throw error;
+    }
     if (message.author.id !== this.client.user?.id) throw new InputError('Active weekly message is not owned by this bot.');
     const users = async (emoji: string) => {
       const found = new Set<string>();

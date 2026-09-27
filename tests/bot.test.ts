@@ -65,6 +65,12 @@ test('weekly post anchors reactions, saves ID and recovers a sent post after fai
   await f.service.run('guild-a', c => d.bot.post(c));
   assert.equal(channel.sent.length, 1); assert.equal(f.db.data.Churches[0].activeMessageId, channel.sent[0].id);
 });
+test('a missing active weekly post is cleared so the next scheduled post can recover', async () => {
+  const f = fixture(); const d = discordFixture(f);
+  f.a.activeMessageId = 'deleted-post';
+  await f.service.runChurch('a', c => d.bot.reconcile(c));
+  assert.equal(f.db.data.Churches[0].activeMessageId, ''); assert.equal(f.db.data.Churches[0].activeWeekDate, '');
+});
 test('an unregistered reaction starts a church-specific survey without creating a ride request', async () => {
   const f = fixture();
   f.b.discordGuildId = 'guild-a'; f.b.weeklyPostChannelId = 'channel-a';

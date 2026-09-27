@@ -50,7 +50,12 @@ export function discordFixture(f: ReturnType<typeof fixture>) {
     const history = new Collection<string, ReturnType<typeof makeMessage>>();
     const sent: ReturnType<typeof makeMessage>[] = [];
     return { id, guildId, history, sent, isTextBased: () => true, isSendable: () => true,
-      messages: { fetch: async (input: string | object) => typeof input === 'string' ? history.get(input) : history },
+      messages: { fetch: async (input: string | object) => {
+        if (typeof input !== 'string') return history;
+        const message = history.get(input);
+        if (!message) throw { code: 10008 };
+        return message;
+      } },
       send: async (payload: { embeds?: unknown[] }) => { const m = makeMessage(`sent-${++sequence}`, id, payload.embeds); history.set(m.id, m); sent.push(m); return m; },
     };
   }
