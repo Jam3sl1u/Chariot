@@ -186,10 +186,7 @@ export class Bot {
           await this.service.register(church, i.user.id, session.data);
           this.registrations.delete(id);
           this.surveys.delete(this.surveyKey(church.churchId, i.user.id));
-          try {
-            await this.dm(i.user.id, `Welcome to ${church.churchName}, ${session.data.name}! Your registration is saved. React again to this church's weekly post: ✅ requests a ride and 1️⃣ adds one guest. Notifications arrive here by Discord DM.`);
-            await i.editReply('Registration saved. Check your DMs!');
-          } catch { await i.editReply('Registration saved, but I could not DM you. Enable direct messages from server members to receive ride messages.'); }
+          await i.editReply(`Registration saved for ${church.churchName}. React again to this church's weekly post: ✅ requests a ride and 1️⃣ adds one guest.`);
         }
       });
       if (!recognized) await i.editReply('This church survey or command is no longer configured. React to the weekly post again.');

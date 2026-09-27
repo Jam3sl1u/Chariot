@@ -706,8 +706,8 @@ Members register through a **church-specific survey initiated by their first rea
 5. Bot checks if a `Member` with that phone number already exists:
    - **New account** → create `Member` row with chosen preference, then create `MemberChurch` record
    - **Existing account** → skip Member creation, just add `MemberChurch` record if not already joined
-6. Bot sends a confirmation DM with the web portal link to set a password on first login. The member must react again to the church's weekly post to request that week's ride; the initial registration-triggering reaction never becomes a request.
-7. Welcome message sent immediately via the member's chosen notification channel.
+6. Bot sends an ephemeral in-channel confirmation. The member must react again to the church's weekly post to request that week's ride; the initial registration-triggering reaction never becomes a request.
+7. No registration welcome DM is sent in this manual MVP flow.
 
 **Web signup flow:**
 1. Member opens `/join/[slug]` or the general `/join` page
@@ -725,8 +725,8 @@ Members register through a **church-specific survey initiated by their first rea
 | BOT-003 | The survey collects name, phone (US E.164 validated), preferences, and a pickup location dynamically populated from that church's `PickupPoint` registry plus "Other / Not Listed." | HIGH | PLANNED |
 | BOT-004 | The survey collects a notification preference: SMS or Discord DM. | HIGH | PLANNED |
 | BOT-005 | On completion, create `Member` with chosen preference if phone doesn't exist; always create `MemberChurch` if not already joined. | HIGH | PLANNED |
-| BOT-006 | Bot sends a confirmation DM with web portal link, prompts member to set a password, and instructs them to react again to request a ride. | HIGH | PLANNED |
-| BOT-007 | Welcome message sent immediately via the member's chosen notification channel. | HIGH | PLANNED |
+| BOT-006 | Bot sends an ephemeral confirmation and instructs the member to react again to request a ride. | HIGH | PLANNED |
+| BOT-007 | No registration welcome DM is sent in the manual MVP flow. | HIGH | PLANNED |
 | BOT-008 | For an unregistered reaction, the bot ignores the reaction (and removes it when permitted), posts the church-specific **Start registration** button in the shared channel for that member, and creates no ride request. | HIGH | PLANNED |
 | BOT-009 | Members can update their registration through the church-specific survey link in their confirmation DM. | MEDIUM | PLANNED |
 | WEB-A01 | Web signup page (`/join/[slug]`) is publicly accessible — no login required. | HIGH | PLANNED |

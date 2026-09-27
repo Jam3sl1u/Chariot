@@ -126,7 +126,8 @@ below mean the coming local service Sunday, not today's date.
    removed, an in-channel Church A **Start registration** button appears, and no request exists. Complete the survey
    with name, `+12025550123`, preferences, and a local zone; then react ✅ to A again.
    Expect one PENDING A request. Repeat from B's post with the same account: expect a
-   distinct B `Members` row and B request. Invalid survey data must not create a row.
+   distinct B `Members` row and B request. The registration confirmation is an
+   ephemeral Discord response, not a welcome DM. Invalid survey data must not create a row.
 2. **Post routing and cancellation:** re-run either church's `/rides post` command:
    expect no duplicate for that church. Remove ✅ from A: only A becomes CANCELLED.
    Re-add it: the same A request becomes PENDING. Reactions to unrelated or
