@@ -14,28 +14,54 @@ export class Service {
   constructor(readonly db: Storage, readonly now: () => DateTime = () => DateTime.utc()) {}
 
   async churches() { return (await this.db.read('Churches')).rows.filter(r => r.churchId); }
-  async resolve(guildId: string) {
+  private async unique(matches: Row[], route: string) {
     const churches = await this.churches();
-    const matches = churches.filter(r => r.discordGuildId === guildId);
     if (matches.length !== 1 || churches.filter(r => r.churchId === matches[0]?.churchId).length !== 1) {
-      console.warn(`Dropped unmapped/ambiguous guild: ${guildId}`);
+      console.warn(`Dropped unmapped/ambiguous ${route}`);
       return undefined;
     }
     return matches[0];
   }
-  run<T>(guildId: string, work: (church: Row) => Promise<T>): Promise<T | undefined> {
+  async resolve(guildId: string) {
+    const churches = await this.churches();
+    return this.unique(churches.filter(r => r.discordGuildId === guildId), `guild: ${guildId}`);
+  }
+  async resolveChannel(guildId: string, channelId: string) {
+    const churches = await this.churches();
+    return this.unique(churches.filter(r => r.discordGuildId === guildId && r.weeklyPostChannelId === channelId), `channel: ${guildId}/${channelId}`);
+  }
+  async resolveMessage(guildId: string, messageId: string) {
+    const churches = await this.churches();
+    return this.unique(churches.filter(r => r.discordGuildId === guildId && r.activeMessageId === messageId), `weekly message: ${guildId}/${messageId}`);
+  }
+  async resolveChurch(churchId: string) {
+    return this.unique((await this.churches()).filter(r => r.churchId === churchId), `church: ${churchId}`);
+  }
+  private queue<T>(resolve: () => Promise<Row | undefined>, work: (church: Row) => Promise<T>): Promise<T | undefined> {
     const task = this.tail.then(async () => {
-      const church = await this.resolve(guildId);
+      const church = await resolve();
       if (church) return work(church);
     });
     this.tail = task.catch(() => undefined);
     return task;
   }
+  run<T>(guildId: string, work: (church: Row) => Promise<T>): Promise<T | undefined> {
+    return this.queue(() => this.resolve(guildId), work);
+  }
+  runChannel<T>(guildId: string, channelId: string, work: (church: Row) => Promise<T>): Promise<T | undefined> {
+    return this.queue(() => this.resolveChannel(guildId, channelId), work);
+  }
+  runMessage<T>(guildId: string, messageId: string, work: (church: Row) => Promise<T>): Promise<T | undefined> {
+    return this.queue(() => this.resolveMessage(guildId, messageId), work);
+  }
+  runChurch<T>(churchId: string, work: (church: Row) => Promise<T>): Promise<T | undefined> {
+    return this.queue(() => this.resolveChurch(churchId), work);
+  }
   async rows(tab: Tab, church: Row) { return (await this.db.read(tab)).rows.filter(r => r.churchId === church.churchId); }
   async patch(tab: Tab, church: Row, key: Row, values: Row) {
     // Resolve again immediately before any write; never trust client-supplied church IDs.
-    const current = await this.resolve(church.discordGuildId);
-    if (!current || current.churchId !== church.churchId) throw new InputError('Church configuration changed. Please try again.');
+    const current = await this.resolveChurch(church.churchId);
+    if (!current || current.churchId !== church.churchId || current.discordGuildId !== church.discordGuildId || current.weeklyPostChannelId !== church.weeklyPostChannelId) throw new InputError('Church configuration changed. Please try again.');
     const rows = (await this.db.read(tab)).rows;
     const matches = rows.map((row, i) => ({ row, i })).filter(({ row }) => row.churchId === church.churchId && Object.entries(key).every(([k, v]) => row[k] === v));
     if (matches.length > 1) throw new InputError(`Duplicate ${tab} rows; ask an admin to repair the Sheet.`);

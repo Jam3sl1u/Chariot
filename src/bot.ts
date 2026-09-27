@@ -67,12 +67,14 @@ export class Bot {
   private async ready() {
     this.churchCache = await this.service.churches();
     for (const church of this.churchCache) {
-      try { await this.service.run(church.discordGuildId, async resolved => {
-        const guild = await this.client.guilds.fetch(resolved.discordGuildId);
-        // Create/update only our commands; do not replace unrelated application commands.
-        for (const command of commands) await guild.commands.create(command);
+      try { await this.service.runChurch(church.churchId, async resolved => {
+        if (!this.initializedGuilds.has(resolved.discordGuildId)) {
+          const guild = await this.client.guilds.fetch(resolved.discordGuildId);
+          // Create/update only our commands; do not replace unrelated application commands.
+          for (const command of commands) await guild.commands.create(command);
+          this.initializedGuilds.add(resolved.discordGuildId);
+        }
         await this.reconcile(resolved);
-        this.initializedGuilds.add(resolved.discordGuildId);
       }); } catch (error) { this.report(`Startup (${church.churchId})`, error); }
     }
     await this.tick();
@@ -109,9 +111,9 @@ export class Bot {
         await i.showModal(this.modal()); return;
       }
       await i.deferReply({ flags: MessageFlags.Ephemeral });
-      if (!i.guildId) throw new InputError('Use this command in your church’s server.');
+      if (!i.guildId || !i.channelId) throw new InputError('Use this command in your church’s configured weekly rides channel.');
       let recognized = false;
-      await this.service.run(i.guildId, async church => {
+      await this.service.runChannel(i.guildId, i.channelId, async church => {
         recognized = true;
         if (i.isChatInputCommand()) {
           if (i.commandName !== 'rides') return;
@@ -169,7 +171,7 @@ export class Bot {
       if (reaction.partial) await reaction.fetch();
       const message = reaction.message.partial ? await reaction.message.fetch() : reaction.message;
       if (!message.guildId || message.author?.id !== this.client.user?.id) return;
-      await this.service.run(message.guildId, async church => {
+      await this.service.runMessage(message.guildId, message.id, async church => {
         if (message.channelId !== church.weeklyPostChannelId) return;
         const ride = await this.service.reaction(church, user.id, message.id, reaction.emoji.name!, added);
         if (ride) await this.promptPlus(church, user.id, ride);
@@ -204,7 +206,7 @@ export class Bot {
         await message.reply(candidates.length ? 'You have multiple pending prompts. Use Discord’s Reply action on the specific church’s message.' : 'No current prompt matches this reply. Use /register in your church, react 1️⃣ for a guest, or ask an admin to resend the driver ask.'); return;
       }
       const candidate = candidates[0];
-      await this.service.run(candidate.church.discordGuildId, async church => {
+      await this.service.runChurch(candidate.church.churchId, async church => {
         if (church.churchId !== candidate.church.churchId) throw new InputError('Church configuration changed. Ask an admin to resend the prompt.');
         await this.isMember(church, message.author.id);
         if (candidate.type === 'driver') await message.reply(`[${church.churchName}] ${await this.service.driverReply(church, message.author.id, candidate.prompt, message.content)}`);
@@ -308,7 +310,7 @@ export class Bot {
       this.churchCache = await this.service.churches();
       for (const church of this.churchCache) {
         try {
-          await this.service.run(church.discordGuildId, async current => {
+          await this.service.runChurch(church.churchId, async current => {
             if (!this.initializedGuilds.has(current.discordGuildId)) {
               const guild = await this.client.guilds.fetch(current.discordGuildId);
               for (const command of commands) await guild.commands.create(command);

@@ -17,6 +17,16 @@ test('unknown and ambiguous guild mappings never write', async () => {
   assert.equal(await f.service.run('guild-a', () => Promise.resolve(true)), undefined);
   assert.equal(f.db.writes.length, 0);
 });
+test('churches sharing a guild are isolated by weekly channel and active message', async () => {
+  const f = fixture();
+  f.b.discordGuildId = 'guild-a';
+  assert.equal(await f.service.run('guild-a', () => Promise.resolve(true)), undefined);
+  await f.service.runChannel('guild-a', 'channel-a', c => f.service.register(c, 'person-a', { name: 'Member A', phone: '+12025550123', zone: 'Zone a' }));
+  await f.service.runChannel('guild-a', 'channel-b', c => f.service.register(c, 'person-b', { name: 'Member B', phone: '+12025550124', zone: 'Zone b' }));
+  await f.service.runMessage('guild-a', 'post-a', c => f.service.reaction(c, 'person-a', 'post-a', '✅', true));
+  await f.service.runMessage('guild-a', 'post-b', c => f.service.reaction(c, 'person-b', 'post-b', '✅', true));
+  assert.deepEqual(f.db.data.RideRequests.map(r => [r.churchId, r.status]).sort(), [['a', 'PENDING'], ['b', 'PENDING']]);
+});
 test('same Discord member registers independently in two churches, then updates in place', async () => {
   const f = fixture(); await register(f); await register(f, 'guild-b');
   const id = f.db.data.Members[0].memberId;

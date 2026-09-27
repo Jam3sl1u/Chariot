@@ -57,9 +57,11 @@ Existing columns may be reordered; code maps them by header name.
 | Drivers | `isActive` | Admin; blank/TRUE means active, FALSE disables asks/replies. |
 | Drivers | `availabilityWeek`, `askedWeek`, `askMessageId`, `respondedWeek` | Bot; scopes/reset/reply context for each week. |
 
-`Churches.churchId` and `discordGuildId` must each be unique. Each other row's
-`churchId` must match a configured church. The same Discord user can belong to both
-churches; use distinct driver/member rows for each. Each driver needs a unique
+`Churches.churchId` and `weeklyPostChannelId` must each be unique. Multiple churches
+may share one `discordGuildId` only when each uses a separate configured weekly channel.
+`/register` and `/rides` are routed by that channel; reactions are routed by the weekly
+post's saved `activeMessageId`. Each other row's `churchId` must match a configured
+church. The same Discord user can belong to both churches; use distinct driver/member rows for each. Each driver needs a unique
 `driverId`, its `churchId`, `name`, `discordId`, `seatsAvailable`, and `homeZone`.
 Set `isAvailableThisWeek` to FALSE initially. `memberId` is optional and does not
 prevent a driver from requesting a passenger ride when they answer NO.

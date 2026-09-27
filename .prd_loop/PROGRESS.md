@@ -75,14 +75,18 @@ auditable later instead of self-reported. See `../AGENTS.md`'s mandatory pre-tur
 - None for the requested MVP implementation. User approved adding the supporting
   columns omitted from §29.5 (timezone/schedule/message context, phone/preferences,
   guest phone, and durable per-week prompt state). See `docs/discord-bot.md`.
+- None. On 2026-09-27, James approved the MVP exception to PRD §29's one-guild-per-church
+  constraint: multiple churches may share a guild when each has a unique
+  `weeklyPostChannelId`; reactions route by `activeMessageId`.
 
 ## Scoped MVP request — M.2 / M.3
 
 - Status: **In Progress — implementation and build tests passed; verifier profile cannot start**.
   This is the user's explicitly requested MVP-000–004 task, not a start of the
   unrelated full-platform checklist. Full-platform rows above remain unchanged.
-- MVP-000: `src/service.ts:17` (`resolve`, `run`, `patch`) resolves every mutation's
-  guild via Churches, rejects unknown/ambiguous mappings and tags writes with churchId.
+- MVP-000: `src/service.ts` routes every mutation through a unique church, weekly channel,
+  or active weekly message and tags writes with `churchId`. Multiple churches may share a
+  guild only with distinct weekly channels; duplicate/unknown routes are rejected.
   `src/bot.ts:187` (`message`) routes DMs only through saved, user-bound prompt context.
 - MVP-001 / BOT-001–009 as adapted by §29: `src/bot.ts` registration modal, live
   church-scoped Zones dropdown and Discord-only preference; `src/service.ts`
@@ -122,6 +126,12 @@ auditable later instead of self-reported. See `../AGENTS.md`'s mandatory pre-tur
   commit `0781088`; independent verifier failed to start due to unsupported legacy
   `untrusted` approval policy in the saved profile. Recorded status In Progress;
   no verifier PASS claimed. No push or algorithm work. Final log-only commit records this outcome.
+- Turn 3 (2026-09-27): MVP shared-Discord-server routing, user-approved exception to §29.
+  Updated `src/service.ts` to resolve commands by weekly channel, reactions by active message,
+  and scheduled/DM work by unique church ID; `src/bot.ts` registers commands once per shared
+  guild while reconciling every church; updated Discord setup documentation. Added shared-guild
+  isolation regression coverage. `bun run typecheck` exited
+  0; `bun test`: 21 pass, 0 fail. No independent verifier run, commit, or push yet.
 
 ## Escalations to human
 *(Codex: log anything you surfaced for remote approval/decision, and the outcome once resolved)*
@@ -133,6 +143,9 @@ auditable later instead of self-reported. See `../AGENTS.md`'s mandatory pre-tur
   the installed CLI no longer supports. The independent verifier cannot start until
   that profile is migrated. Build code is committed and 20 tests pass; live checks
   and a genuine independent verifier run remain outstanding.
+- M.2/M.3 shared-guild routing (AGENTS.md Tier 2): User explicitly approved multiple
+  churches per Discord guild with a unique weekly channel per church and weekly-message-ID
+  routing for reactions on 2026-09-27. Resolved and implemented; see Turn 3.
 
 - Row 00 (Telnyx Toll-Free Verification): this is a real-world business verification submitted
   through Telnyx's portal, not something Codex can do from the repo. Flagged immediately per
