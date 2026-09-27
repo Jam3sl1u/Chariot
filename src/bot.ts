@@ -46,8 +46,8 @@ export class Bot {
     const status = typeof details.status === 'number' ? `; HTTP ${details.status}` : '';
     console.error(`${context}: operation failed; check configuration, permissions and connectivity${code}${status}`);
   }
-  private async dm(userId: string, content: string, components: ActionRowBuilder<ButtonBuilder>[] = []) {
-    return (await this.client.users.fetch(userId)).send({ content, components, allowedMentions: { parse: [] } });
+  private async dm(userId: string, content: string) {
+    return (await this.client.users.fetch(userId)).send({ content, allowedMentions: { parse: [] } });
   }
   private async channel(church: Row) {
     const channel = await this.client.channels.fetch(church.weeklyPostChannelId);
@@ -100,12 +100,7 @@ export class Bot {
     const current = this.surveys.get(key);
     if (current && current.expires >= Date.now()) return;
     this.surveys.set(key, { churchId: church.churchId, userId, expires: Date.now() + 15 * 60_000 });
-    try {
-      await this.dm(userId, `[${church.churchName}] Complete your registration survey before requesting a ride.`, [new ActionRowBuilder<ButtonBuilder>().addComponents(new ButtonBuilder().setCustomId(`survey:${church.churchId}`).setLabel('Start survey').setStyle(ButtonStyle.Primary))]);
-    } catch {
-      this.surveys.delete(key);
-      await message.reply({ content: `<@${userId}>, enable direct messages from server members, then react again to start the registration survey.`, allowedMentions: { users: [userId], roles: [], repliedUser: false } });
-    }
+    await message.reply({ content: `<@${userId}>, complete the ${church.churchName} registration survey before requesting a ride.`, components: [new ActionRowBuilder<ButtonBuilder>().addComponents(new ButtonBuilder().setCustomId(`survey:${church.churchId}`).setLabel('Start registration').setStyle(ButtonStyle.Primary))], allowedMentions: { users: [userId], roles: [], repliedUser: false } });
   }
   private zoneComponents(id: string, session: Registration, page = 0) {
     const zones = session.zones.slice(page * 24, page * 24 + 24);

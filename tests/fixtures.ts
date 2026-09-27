@@ -73,7 +73,7 @@ export function discordFixture(f: ReturnType<typeof fixture>) {
     let removed = false;
     await (bot as unknown as { reaction: (r: MessageReaction, u: User, added: boolean) => Promise<void> }).reaction({
       emoji: { name: emoji }, partial: false, users: { remove: async () => { removed = true; } },
-      message: { partial: false, id: messageId, guildId, channelId, author: { id: 'bot' }, reply: async (text: string) => { replies.push(text); } },
+      message: { partial: false, id: messageId, guildId, channelId, author: { id: 'bot' }, reply: async (value: string | { content: string }) => { replies.push(typeof value === 'string' ? value : value.content); } },
     } as unknown as MessageReaction, { id: user, bot: false } as User, true);
     return { removed };
   };

@@ -62,7 +62,7 @@ Existing columns may be reordered; code maps them by header name.
 `Churches.churchId` must be unique. Every church row uses the same `discordGuildId` and
 `weeklyPostChannelId`; reactions are routed only by the weekly post's saved
 `activeMessageId`. An unregistered reaction is ignored (and removed when the bot has
-Manage Messages) while the member receives that post's church-specific survey DM. Each other row's `churchId` must match a configured
+Manage Messages) while the bot posts that member's church-specific **Start registration** button in the shared channel. Each other row's `churchId` must match a configured
 church. The same Discord user can belong to both churches; use distinct driver/member rows for each. Each driver needs a unique
 `driverId`, its `churchId`, `name`, `discordId`, `seatsAvailable`, and `homeZone`.
 Set `isAvailableThisWeek` to FALSE initially. `memberId` is optional and does not
@@ -124,7 +124,7 @@ below mean the coming local service Sunday, not today's date.
 1. **Registration in both churches:** as an admin, run `/rides post church:church-a`
    and `/rides post church:church-b` in the shared channel. Each post has its own ✅/1️⃣
    anchors and saved `activeMessageId`. React ✅ to A as a new user: the reaction is
-   removed, a Church A survey DM arrives, and no request exists. Complete the survey
+   removed, an in-channel Church A **Start registration** button appears, and no request exists. Complete the survey
    with name, `+12025550123`, preferences, and a local zone; then react ✅ to A again.
    Expect one PENDING A request. Repeat from B's post with the same account: expect a
    distinct B `Members` row and B request. Invalid survey data must not create a row.
