@@ -148,9 +148,14 @@ export class Bot {
           if (church.discordGuildId !== i.guildId || church.weeklyPostChannelId !== i.channelId) throw new InputError('Use this command in the shared rides channel with a configured church ID.');
           if (!i.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) throw new InputError('Manage Server permission is required.');
           const sub = i.options.getSubcommand();
-          if (sub === 'post') await this.post(church);
-          if (sub === 'sync') await this.reconcile(church);
-          if (sub === 'ask-drivers') { await this.reset(church); await this.ask(church, true); }
+          try {
+            if (sub === 'post') await this.post(church);
+            if (sub === 'sync') await this.reconcile(church);
+            if (sub === 'ask-drivers') { await this.reset(church); await this.ask(church, true); }
+          } catch (error) {
+            this.report(`Interaction /rides ${sub} (${church.churchId})`, error);
+            throw error;
+          }
           await i.editReply('Completed.'); return;
         }
         for (const [key, value] of this.registrations) if (value.expires < Date.now()) this.registrations.delete(key);
