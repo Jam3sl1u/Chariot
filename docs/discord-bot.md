@@ -82,7 +82,8 @@ Boolean cells are written as actual Sheets booleans. User text is written with
 run the scheduler, post automatically, reset availability automatically, or send
 driver asks automatically. It waits for an admin command. Use `/rides post church:ID`
 to create a new weekly post, `/rides sync church:ID` to reconcile it, and
-`/rides ask-drivers church:ID` to reset/ask drivers for that church.
+`/rides ask-drivers church:ID` to reset/ask drivers for that church. A post command
+after a restart always creates a fresh message; old posts remain visible but inactive.
 
 - Admin `/rides ask-drivers` works immediately for testing and re-sends only
   to drivers without a recorded response this week. To override availability,

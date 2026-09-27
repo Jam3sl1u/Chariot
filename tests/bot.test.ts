@@ -63,7 +63,7 @@ test('reconciliation restores offline additions and removes absent reactions, in
   assert.equal(f.db.data.RideRequests[1].hasPlusOne, 'true');
   await f.service.run('guild-a', c => d.bot.reconcile(c)); assert.equal(d.dms.length, 1);
 });
-test('weekly post anchors reactions, saves ID and recovers a sent post after failed persistence', async () => {
+test('manual posting anchors reactions and creates a fresh post after startup state is cleared', async () => {
   const f = fixture(); const d = discordFixture(f); f.a.activeMessageId = ''; f.a.activeWeekDate = '';
   await f.service.run('guild-a', c => d.bot.post(c));
   const channel = d.channels.get('channel-a')!;
@@ -71,9 +71,9 @@ test('weekly post anchors reactions, saves ID and recovers a sent post after fai
   assert.equal(f.db.data.Churches[0].activeMessageId, channel.sent[0].id);
   f.db.data.Churches[0].activeMessageId = ''; f.db.data.Churches[0].activeWeekDate = '';
   await f.service.run('guild-a', c => d.bot.post(c));
-  assert.equal(channel.sent.length, 1); assert.equal(f.db.data.Churches[0].activeMessageId, channel.sent[0].id);
+  assert.equal(channel.sent.length, 2); assert.equal(f.db.data.Churches[0].activeMessageId, channel.sent[1].id);
 });
-test('a missing active weekly post is cleared so the next scheduled post can recover', async () => {
+test('manual sync clears a missing active weekly post', async () => {
   const f = fixture(); const d = discordFixture(f);
   f.a.activeMessageId = 'deleted-post';
   await f.service.runChurch('a', c => d.bot.reconcile(c));

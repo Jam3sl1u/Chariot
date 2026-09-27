@@ -5,7 +5,7 @@ import {
   type Interaction, type Message, type MessageReaction, type PartialMessageReaction,
   type User, type PartialUser,
 } from 'discord.js';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import type { Row } from './sheets.js';
 import { Service, InputError, truth, validPhone } from './service.js';
 import { localTime, weekDate, weeklyDue } from './time.js';
@@ -263,19 +263,8 @@ export class Bot {
     if (church.activeMessageId && church.activeWeekDate === week) return;
     if (!church.weeklyMessageTemplate?.trim()) throw new InputError('Set weeklyMessageTemplate in Churches before posting.');
     const channel = await this.channel(church);
-    // Recover a post sent before a crash/failed Sheet write, before sending anything new.
     const marker = `chariot:weekly:${church.churchId}:${week}`;
-    let recovered: Message | undefined;
-    let before: string | undefined;
-    const start = localTime(church, this.service.now()).startOf('week').toMillis();
-    for (;;) {
-      const history = await channel.messages.fetch({ limit: 100, before });
-      recovered = history.find(m => m.author.id === this.client.user?.id && m.embeds.some(e => e.footer?.text === marker));
-      if (recovered || history.size < 100 || history.last()!.createdTimestamp < start) break;
-      before = history.last()!.id;
-    }
-    const message = recovered ?? await channel.send({ content: church.weeklyMessageTemplate, embeds: [{ footer: { text: marker } }], nonce: createHash('sha256').update(marker).digest('hex').slice(0, 24), enforceNonce: true, allowedMentions: { parse: [] } });
-    // Save before reactions so a failed anchor can be repaired by reconciliation.
+    const message = await channel.send({ content: church.weeklyMessageTemplate, embeds: [{ footer: { text: marker } }], allowedMentions: { parse: [] } });
     await this.service.patch('Churches', church, {}, { activeMessageId: message.id, activeWeekDate: week });
     await message.react('✅');
     await message.react('1️⃣');

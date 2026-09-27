@@ -754,7 +754,7 @@ Hey everyone! Rides to church this Sunday are available. React with the checkmar
 |---|---|---|---|
 | BOT-010 | **MVP manual mode:** the bot does not start a scheduler. An admin explicitly invokes `/rides post church:ID`; `weeklySendDay`/`weeklySendTime` are retained only as future configuration. | HIGH | PLANNED |
 | BOT-011 | Bot immediately adds the ✅ reaction to its own post to anchor the reaction UI. | HIGH | PLANNED |
-| BOT-012 | Bot stores the Discord message ID as `Church.activeMessageId` while running; every process start clears it with `activeWeekDate`, so posts never survive a restart. | HIGH | PLANNED |
+| BOT-012 | Bot stores the Discord message ID as `Church.activeMessageId` while running; every process start clears it with `activeWeekDate`, so posts never survive a restart and the next manual post creates a fresh message. | HIGH | PLANNED |
 | BOT-013 | **MVP manual mode:** on startup, clear every Church row's `activeMessageId`, `activeWeekDate`, and `availabilityResetWeek`; do not reconcile reactions or dispatch scheduled work. | HIGH | PLANNED |
 | BOT-014 | ✅ reaction creates or updates a PENDING `RideRequest` for that member (`createdFrom = MANUAL`). | HIGH | PLANNED |
 | BOT-015 | Removing the ✅ reaction sets the `RideRequest` status to CANCELLED. If the request was `createdFrom = STANDING`, this cancels only that week's occurrence, not the underlying `StandingRideRequest`. | HIGH | PLANNED |
