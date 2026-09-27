@@ -134,13 +134,13 @@ Schema lives in `packages/db/prisma/schema.prisma` and is the single source of t
 | `name` | String | Not Null | e.g. 'Miramar Church' |
 | `location` | String | Not Null | Physical address of the church |
 | `serviceTime` | String | Not Null | Service start time (e.g. '10:00 AM') in the church's local timezone |
-| `discordServerId` | String | Unique | Discord guild (server) ID |
-| `discordChannelId` | String | Not Null | Single channel for weekly ride posts and `/register` command |
+| `discordServerId` | String | Not Null, indexed | Shared Discord guild (server) ID; multiple Church rows may use it |
+| `discordChannelId` | String | Not Null, indexed | Shared rides channel ID; multiple Church rows may use it |
 | `weeklyMessageTemplate` | String | Not Null | Custom body for the weekly ride post |
 | `weeklySendDay` | String | Not Null | Day of week (e.g. 'Wednesday') |
 | `weeklySendTime` | String | Not Null | Local time to post (e.g. '09:00') — interpreted in `Church.timezone` by the scheduler |
 | `reminderSendTime` | String | Not Null | Local time for the Friday member reminder (e.g. '18:00') — interpreted in `Church.timezone` by the scheduler. Day is fixed at Friday for all churches; only the time is configurable. |
-| `activeMessageId` | String? | Nullable | Discord message ID of current week's post — survives bot restarts |
+| `activeMessageId` | String? | Nullable, Unique when present | Discord message ID of this church's current week's post — the authoritative route for reactions and survives bot restarts |
 | `timezone` | String | Not Null | IANA timezone string (e.g. `America/Los_Angeles`) — auto-suggested from `location`, confirmed during setup |
 | `isActive` | Boolean | Default true | **New in v1.1.** Soft deactivation flag (WEB-082) — false hides the church from active lists and pauses its scheduled jobs, without deleting any data. Reversible by a super-admin. |
 | `detourTolerancePercent` | Int | Default 20 | **New in v1.1.** Assignment-algorithm tuning parameter — max acceptable detour as a percent of direct distance. |
@@ -677,14 +677,14 @@ Success response (`200`): includes `id` (the Google event ID), which is stored s
 
 ## 3. Multi-Church Architecture
 
-Every table carries a `churchId` FK. The bot resolves which church to act on by matching the Discord guild ID of the incoming event.
+Every table carries a `churchId` FK. All churches use one shared Discord guild and rides channel. The bot resolves a reaction to its church by the weekly post's globally unique Discord message ID; DMs use the persisted prompt context. A guild or channel alone is never sufficient to choose a church.
 
 | ID | Requirement | Priority | Status |
 |---|---|---|---|
 | MC-001 | Each Church row holds everything needed to run one church's weekly cycle independently. | HIGH | PLANNED |
 | MC-002 | All tables (Member, Driver, RideRequest, RideAssignment, PickupPoint, PickupPointDistance) are scoped by `churchId`, enforced at the application layer per Section 2.7. No cross-church data access. | HIGH | PLANNED |
-| MC-003 | The bot resolves the correct church from the Discord guild ID on every event. | HIGH | PLANNED |
-| MC-004 | Each church has its own `weeklySendDay`, `weeklySendTime`, `reminderSendTime`, `weeklyMessageTemplate`, `timezone`, `PickupPoint` registry, and Discord channel config. | HIGH | PLANNED |
+| MC-003 | The bot resolves a weekly-post reaction to exactly one church by `activeMessageId` and verifies the shared guild/channel; it resolves a DM only from a persisted, user-bound prompt context. Unknown or ambiguous routes are dropped without a write. | HIGH | PLANNED |
+| MC-004 | Each church has its own `weeklySendDay`, `weeklySendTime`, `reminderSendTime`, `weeklyMessageTemplate`, timezone, and `PickupPoint` registry while sharing the same Discord guild and rides channel. | HIGH | PLANNED |
 | MC-005 | A super-admin can onboard new Church rows, configure all settings, assign/remove admins for a church, and deactivate a church via the admin panel. | HIGH | PLANNED |
 | MC-006 | Per-church pickup-location structure: **resolved in v1.1.** Rather than a simple reorderable list, each church maintains its own geocoded `PickupPoint` registry, and the assignment algorithm computes genuine route-based groupings from it (Section 7.1). This fully supersedes the earlier, simpler "reorder a fixed list of 8 zones" idea. | HIGH | PLANNED |
 
@@ -694,20 +694,20 @@ Every table carries a `churchId` FK. The bot resolves which church to act on by 
 
 ### 4.1 Member Registration
 
-Members register via **`/register` Discord slash command** or via the **web signup form**. The bot does not respond to free-form channel messages — it only manages the weekly post and its reactions.
+Members register through a **church-specific survey initiated by their first reaction to that church's weekly post**, or via the web signup form. All churches share one Discord guild and rides channel. The bot does not respond to free-form channel messages.
 
 > **Design:** Discord modals can't be opened from a plain message, and modals don't support dropdowns. The two-step modal/dropdown flow is the correct Discord API workaround.
 
-**Discord `/register` flow:**
-1. Member uses `/register` slash command in the church's configured `discordChannelId` (the same single channel used for weekly posts — the command is not available in other channels)
-2. Bot opens a modal: name, phone (US E.164 validated), preferences
-3. After modal submit, bot sends an ephemeral dropdown for pickup location — **populated dynamically from the church's `PickupPoint` registry (v1.1), not a fixed global list**, always including "Other / Not Listed" as the last option
-4. Bot sends an ephemeral follow-up asking notification preference: **SMS** or **Discord DM**
+**Discord reaction-initiated survey flow:**
+1. Member reacts ✅ or 1️⃣ to one church's current weekly post in the shared rides channel. The post's `activeMessageId` identifies that church.
+2. If the member has no completed `MemberChurch` registration for that church, the bot does **not** create a ride request or +1. It ignores the reaction and removes it when it has Discord's Manage Messages permission; the Discord client cannot prevent a user from clicking a reaction in the first place.
+3. The bot sends the member a DM containing a **Start survey** button for that church. If DMs are disabled, no registration or ride request is created and the bot posts a non-sensitive channel instruction to enable DMs and react again.
+4. The button opens a modal: name, phone (US E.164 validated), preferences. After submission, the bot presents a pickup-location dropdown populated from that church's `PickupPoint` registry, always including "Other / Not Listed" last, then asks notification preference: **SMS** or **Discord DM**.
 5. Bot checks if a `Member` with that phone number already exists:
    - **New account** → create `Member` row with chosen preference, then create `MemberChurch` record
    - **Existing account** → skip Member creation, just add `MemberChurch` record if not already joined
-6. Bot sends a confirmation DM with the web portal link to set a password on first login
-7. Welcome message sent immediately via the member's chosen notification channel
+6. Bot sends a confirmation DM with the web portal link to set a password on first login. The member must react again to the church's weekly post to request that week's ride; the initial registration-triggering reaction never becomes a request.
+7. Welcome message sent immediately via the member's chosen notification channel.
 
 **Web signup flow:**
 1. Member opens `/join/[slug]` or the general `/join` page
@@ -720,15 +720,15 @@ Members register via **`/register` Discord slash command** or via the **web sign
 
 | ID | Requirement | Priority | Status |
 |---|---|---|---|
-| BOT-001 | Bot registers a `/register` slash command on the church's Discord server. | HIGH | PLANNED |
-| BOT-002 | `/register` opens a modal collecting name, phone (US E.164 validated), and preferences. | HIGH | PLANNED |
-| BOT-003 | After modal submit, bot sends an ephemeral dropdown to collect pickup location, dynamically populated from the church's `PickupPoint` registry plus "Other / Not Listed." | HIGH | PLANNED |
-| BOT-004 | Bot sends an ephemeral follow-up asking notification preference: SMS or Discord DM. | HIGH | PLANNED |
+| BOT-001 | All Church rows use one configured Discord guild and one configured rides channel; each church's active weekly post is identified by its unique `activeMessageId`. | HIGH | PLANNED |
+| BOT-002 | A first ✅ or 1️⃣ reaction by a member not registered for that post's church starts that church's DM survey; it never creates a ride request or +1. | HIGH | PLANNED |
+| BOT-003 | The survey collects name, phone (US E.164 validated), preferences, and a pickup location dynamically populated from that church's `PickupPoint` registry plus "Other / Not Listed." | HIGH | PLANNED |
+| BOT-004 | The survey collects a notification preference: SMS or Discord DM. | HIGH | PLANNED |
 | BOT-005 | On completion, create `Member` with chosen preference if phone doesn't exist; always create `MemberChurch` if not already joined. | HIGH | PLANNED |
-| BOT-006 | Bot sends a confirmation DM with web portal link and prompts member to set a password. | HIGH | PLANNED |
+| BOT-006 | Bot sends a confirmation DM with web portal link, prompts member to set a password, and instructs them to react again to request a ride. | HIGH | PLANNED |
 | BOT-007 | Welcome message sent immediately via the member's chosen notification channel. | HIGH | PLANNED |
-| BOT-008 | Unregistered members who react to the weekly post get a DM pointing them to `/register` or the web signup link. | HIGH | PLANNED |
-| BOT-009 | Members can use `/register` again to update their name, preferences, pickup location, or notification preference. | MEDIUM | PLANNED |
+| BOT-008 | For an unregistered reaction, the bot ignores the reaction (and removes it when permitted), sends the church-specific survey DM, and creates no ride request. If DM delivery fails, it creates no ride request and tells the member in-channel to enable DMs and react again. | HIGH | PLANNED |
+| BOT-009 | Members can update their registration through the church-specific survey link in their confirmation DM. | MEDIUM | PLANNED |
 | WEB-A01 | Web signup page (`/join/[slug]`) is publicly accessible — no login required. | HIGH | PLANNED |
 | WEB-A02 | General signup page (`/join`) shows a list of all active churches; user selects exactly one. | HIGH | PLANNED |
 | WEB-A03 | Web signup applies the same phone-number check: create or link account, create MemberChurch record. | HIGH | PLANNED |
@@ -2863,9 +2863,9 @@ model Church {
   timezone                  String
   isActive                  Boolean  @default(true)
 
-  discordServerId           String   @unique
+  discordServerId           String
   discordChannelId          String
-  activeMessageId           String?
+  activeMessageId           String?  @unique
 
   weeklyMessageTemplate     String
   weeklySendDay             String
@@ -2893,6 +2893,7 @@ model Church {
   notificationLogs          NotificationLog[]
 
   @@index([isActive])
+  @@index([discordServerId, discordChannelId])
 }
 
 model PickupPoint {
@@ -3624,6 +3625,7 @@ Conventions: tasks within a phase that share no files can run in parallel; a tas
 | 2.1 | 2026-09-15 | Completeness/consistency audit against the PRD Completeness Standard. Fixed this table's row order (v1.2 and v1.3 were previously listed after v2.0, even though their content — §2.9, §5.5.0–5.5.11 — was already merged in; now reads chronologically 1.1 → 1.2 → 1.3 → 2.0). Relabeled all 269 `TBD`-status requirement rows to `PLANNED` after a full-text scan found none contained undecided/hedging language (all read as fully specified; only the two prior `PLANNED` rows, MC-006 and DB-005, had ever been flipped from TBD) — cleaned up SEC-004's now-redundant "(already decided)" note in the process. Added new **Section 27 (Business Rules Index)** and **Section 28 (Error States Index)** as pointer-only appendices consolidating rules and failure-handling scattered across §2.9, §3, §4, §5, §5.5.0, §6, §7, §8, and §23 — appended at the end rather than inserted mid-document to avoid renumbering existing cross-references. No functional/scope changes. |
 | 2.2 | 2026-09-15 | Introduced a staged build strategy. **New Section 29 (MVP — Lightweight Discord + Google Sheets Build):** defines a minimal pre-Phase-0 MVP — the existing Discord bot (§4) unchanged in behavior but writing to a Google Sheet instead of Postgres, plus a Google Apps Script that computes weekly assignments via fixed zone-priority grouping (not the full detour-cost algorithm) and a second bot trigger that delivers results via Discord DM only (no Telnyx at this stage). Scoped to the single pilot church; explicitly out of scope: web app, auth, multi-church, Google Calendar sync, standing requests, and the full test suite (all deferred to the existing full-platform build in Sections 1–28, unchanged by this addition). Added MVP data model (5 sheet tabs), 8 functional requirements (`MVP-001`–`008`), an 8-task build list (§29.9), and graduation criteria back to the full build (§29.10). Updated Section 1.5 (Scope Summary no longer claims "no MVP subset"), added pointer notes atop Sections 18 and 24, and added 3 corresponding Decision Log entries. |
 | 2.3 | 2026-09-15 | Expanded the MVP (Section 29) to support two churches from the start rather than one. Changed from an implied single-sheet-single-tenant model to one shared sheet with `churchId`-scoped rows on every tab (§29.5's 6 tabs, up from 5 — added `Churches` config tab mapping each church to its Discord guild and channels) and a bot that resolves `guildId`→`churchId` (new `MVP-000`) before every write. Apps Script's Saturday trigger now loops once per `Churches` row, computing and writing assignments separately per church — riders/drivers are never mixed across churches. Added §29.6a documenting that a third church needs only a new `Churches` row, no code changes. Updated all of §29.1–§29.2, §29.9, and §29.10 accordingly; superseded the single-church Decision Log entry with a two-church one. |
+| 2.4 | 2026-09-27 | Reworked Discord routing for the shared-community flow. All churches share one Discord guild and rides channel; each church has a distinct weekly post and its `activeMessageId` routes reactions. Replaced slash-command-first registration with a church-specific DM survey initiated by an unregistered member's first ✅/1️⃣ reaction; that first reaction is ignored (and removed when permitted), and the member must complete the survey then react again before a ride request is created. Updated the full-platform Church schema, multi-church rules, Discord requirements, and MVP §29 requirements/build tasks accordingly. |
 
 ---
 
@@ -3682,27 +3684,27 @@ This section defines a deliberately minimal MVP that precedes the full platform 
 
 ### 29.1 MVP Architecture
 
-- **Discord bot** (Node.js/discord.js) — same registration, weekly-post/reaction, +1, and driver-availability behavior as Section 4, unchanged. One bot process serves both churches' Discord servers (guilds); it resolves every incoming event's `guildId` to a `churchId` via the `Churches` tab (§29.5) before writing anything. Runs as a persistent process (Railway free tier, per §16.1) since it needs an always-on Discord gateway connection.
-- **One Google Sheet, shared by both churches** — replaces Postgres as the data store. Every data tab carries a `churchId` column, mirroring the full platform's own tenant-scoping principle (Business Rules Index, §27) rather than inventing a different pattern that would later need migrating. A `Churches` config tab holds each church's `churchId`, `discordGuildId`, and channel IDs.
+- **Discord bot** (Node.js/discord.js) — one bot process serves all churches in one shared Discord guild and rides channel. It routes a reaction by the specific weekly post's `activeMessageId`, not by guild/channel, and starts a church-specific DM survey when an unregistered member first reacts. Runs as a persistent process (Railway free tier, per §16.1) since it needs an always-on Discord gateway connection.
+- **One Google Sheet, shared by all churches** — replaces Postgres as the data store. Every data tab carries a `churchId` column, mirroring the full platform's own tenant-scoping principle (Business Rules Index, §27). A `Churches` config tab holds each church's `churchId`, with the shared `discordGuildId` and `weeklyPostChannelId`, plus its own weekly-post message state.
 - **Google Apps Script**, bound to that sheet — replaces the assignment-algorithm service. Runs on a time-driven trigger (Saturday, matching BE-012's timing) and **loops once per row in `Churches`**, computing and writing assignments separately for each — riders and drivers are never mixed across churches, even though they live in the same sheet.
 - **Google Sheets API** — the bot reads/writes the sheet via a Google Cloud service account (JSON key) and the `googleapis` Node client. No Prisma, no Postgres, no Vercel, no Neon.
 - **Notification delivery stays the bot's job, not Apps Script's.** Apps Script only computes assignments and writes results into the sheet; a second bot-side time trigger reads finalized, not-yet-notified rows and sends the Discord DMs, routing to the right guild via the row's `churchId`. This keeps "compute" and "deliver" cleanly separated and means Apps Script never needs Discord credentials.
 - **Concurrency:** the bot writes new rows continuously (reactions arriving in real time, from either church); Apps Script runs once a week. Apps Script must acquire `LockService.getScriptLock()` for the duration of its run so a mid-run bot write can't be read half-finished — this matters more now that two churches' data lives in one sheet.
 
-**Flow:** bot posts weekly ask in each church's guild → reactions write `RideRequests` rows tagged with that church's `churchId` → Thursday driver ask writes `Drivers.isAvailableThisWeek` per church → Saturday Apps Script trigger iterates `Churches`, and for each one reads that church's `Drivers`/`RideRequests`/`Zones` rows, computes assignments, writes `Assignments` rows tagged with `churchId` → a second bot trigger reads `Assignments` where `notified = false` across both churches, DMs each driver and member in their own guild, sets `notified = true`.
+**Flow:** bot posts one distinct weekly ask per church into the shared channel → a reaction is routed by that post's `activeMessageId` → an unregistered reactor receives that church's survey and no request is created until they complete it and react again → eligible reactions write `RideRequests` tagged with that church's `churchId` → Thursday driver ask writes `Drivers.isAvailableThisWeek` per church → Saturday Apps Script trigger iterates `Churches`, and for each one reads that church's `Drivers`/`RideRequests`/`Zones` rows, computes assignments, writes `Assignments` rows tagged with `churchId` → a second bot trigger reads `Assignments` where `notified = false`, DMs each driver and member, then sets `notified = true`.
 
 ### 29.2 MVP Scope Decisions — confirm before building
 
 | Decision | Default I chose | Why | Override if... |
 |---|---|---|---|
-| Church count | **Two churches from the start** — one shared sheet, `churchId`-scoped rows, one bot serving both guilds | Matches your ask directly. A shared sheet with a `churchId` column is barely more work than one sheet and avoids maintaining two parallel sheet/script deployments — and it mirrors the full platform's own tenant-scoping pattern (§27), so the eventual Postgres migration is a straight column-for-column mapping instead of a redesign. | A third church wants in before graduation (§29.10) — the pattern extends by just adding a `Churches` row; no architecture change needed. |
+| Church count and Discord layout | **Two churches from the start** — one shared sheet, one Discord guild, and one shared rides channel; each church gets its own distinct weekly post | Keeps one community conversation while `activeMessageId` makes every reaction unambiguous. A shared sheet with `churchId` is barely more work than one sheet and mirrors the full platform's tenant scoping. | A third church wants in — add a `Churches` row and its own weekly post; no guild, channel, or schema change needed. |
 | Assignment algorithm | Fixed zone-priority grouping (the pre-v1.1 design, already fully specified in earlier doc history), run separately per church | The detour-cost/distance-matrix algorithm (§7.1) is the highest-risk, most complex part of the whole system — porting it into Apps Script defeats the point of "lightweight." Each church has its own `Zones` list; riders/drivers are never mixed across churches. | You want production-quality routing from day one — the pure-function design in §23.6 can be pasted into Apps Script largely as-is; budget real time for it. |
 | Notification channel | Discord DM only, no Telnyx SMS | Keeps MVP infra at $0/month. | Either pilot church's members aren't reliably Discord-active — SMS may be necessary for a fair test, not just a nice-to-have. |
 | Web presence | None — no signup page, no portal, no admin dashboard | Registration and all self-service already live in Discord per Section 4. | You want a public non-Discord signup path even at MVP — this reintroduces most of the web app's surface area. |
 
 ### 29.3 In Scope for MVP
 
-- `BOT-001`–`BOT-021` (registration, weekly post, ✅/1️⃣ reactions, +1 flow) — unchanged behavior, except the write target is the Google Sheet instead of Postgres, and every write is tagged with the `churchId` resolved from the event's Discord guild.
+- `BOT-001`–`BOT-021` (reaction-initiated registration survey, weekly posts, ✅/1️⃣ reactions, +1 flow) — writes target the Google Sheet and every reaction write is tagged with the `churchId` resolved from the post message ID.
 - `BOT-022`–`BOT-030` (Thursday driver YES/NO ask and reply handling) — unchanged, same target-sheet-and-churchId-tagging swap.
 - New MVP-only requirements (below) covering the sheet-write layer, guild→church resolution, the per-church Apps Script computation, and the results-and-notify loop.
 
@@ -3727,9 +3729,9 @@ Web application and member portal (§5) · Postgres/Prisma schema (§6) · auth/
 
 | ID | Requirement | Priority | Status |
 |---|---|---|---|
-| MVP-000 | On any incoming Discord event, the bot resolves `guildId` → `churchId` via the `Churches` tab before writing anything. An event from an unrecognized `guildId` is logged and dropped, never written under a guessed church. | HIGH | PLANNED |
-| MVP-001 | On `/register` completion, the bot writes a new `Members` row tagged with the resolved `churchId` (or updates the existing one by `discordId` + `churchId`) instead of creating a Prisma `Member`. | HIGH | PLANNED |
-| MVP-002 | ✅/removal of ✅ on the weekly post creates/cancels a `RideRequests` row for that member, week, and `churchId`, instead of a Prisma `RideRequest`. | HIGH | PLANNED |
+| MVP-000 | All Churches rows use the same configured Discord guild and rides channel. On a weekly-post reaction, the bot resolves `(guildId, channelId, messageId)` → exactly one `churchId` through that church's `activeMessageId`; unknown or ambiguous messages are logged and dropped, never written under a guessed church. | HIGH | PLANNED |
+| MVP-001 | An unregistered member's first ✅ or 1️⃣ reaction to a church's weekly post starts that church's DM survey and writes neither `Members` nor `RideRequests` until the survey is completed. On survey completion, the bot creates or updates the `Members` row by `discordId` + `churchId`; the member must react again to request a ride. | HIGH | PLANNED |
+| MVP-002 | ✅/removal of ✅ on a weekly post creates/cancels a `RideRequests` row only for a member already registered for that post's church, week, and `churchId`. | HIGH | PLANNED |
 | MVP-003 | 1️⃣ reaction flow writes `hasPlusOne`/`plusOneName` onto the member's `RideRequests` row for that week. | HIGH | PLANNED |
 | MVP-004 | Thursday driver YES/NO reply sets `Drivers.isAvailableThisWeek` for that driver, scoped to their `churchId`. | HIGH | PLANNED |
 | MVP-005 | Saturday Apps Script trigger iterates every row in `Churches`; for each, reads only that church's `Drivers` (available only), `RideRequests` (PENDING, current week), and `Zones`; groups riders into available drivers by that church's fixed zone-priority order up to each driver's `seatsAvailable` (+1s counting as 2 seats, per BE-003's rule); writes one `Assignments` row per seated rider, tagged with `churchId`. Riders and drivers are never matched across different `churchId` values. | HIGH | PLANNED |
@@ -3739,7 +3741,7 @@ Web application and member portal (§5) · Postgres/Prisma schema (§6) · auth/
 
 ### 29.6a Extending to a Third Church
 
-Add a `Churches` row (`churchId`, `discordGuildId`, channel IDs) and a matching set of `Zones` rows for the new church; invite the bot to its Discord server. No code or schema change required — every requirement above already loops by `churchId`.
+Add a `Churches` row using the same shared `discordGuildId` and `weeklyPostChannelId`, plus a matching set of `Zones` rows. No code or schema change is required: the bot posts a distinct weekly message for the new church and every requirement above routes by its `activeMessageId` and `churchId`.
 
 ### 29.7 MVP Non-Functional / Infra
 
@@ -3753,8 +3755,8 @@ No Jest/Playwright/Artillery investment at this stage. Write the zone-priority a
 
 | # | Task | Depends on | Done when |
 |---|---|---|---|
-| M.1 | Create the Google Sheet with the six tabs in §29.5, including `Churches` seeded with both churches' rows; create a Google Cloud service account with Sheets API access; share the sheet with it; invite the bot to both churches' Discord servers. | — | Bot can authenticate and read/write a test row via `googleapis` for both `churchId`s. |
-| M.2 | Implement `guildId`→`churchId` resolution (MVP-000); point existing `BOT-001`–`BOT-021` write logic at the Sheets API instead of Prisma, tagging every write with the resolved `churchId`. | M.1 | Registering via Discord in either church's server produces a correctly-tagged row in `Members`; reacting ✅ produces a correctly-tagged row in `RideRequests`. |
+| M.1 | Create the Google Sheet with the six tabs in §29.5, including `Churches` seeded with both churches' rows using the same guild/channel IDs; create a Google Cloud service account with Sheets API access; share the sheet with it; invite the bot to the shared Discord server. | — | Bot can authenticate and read/write a test row for both `churchId`s. |
+| M.2 | Implement weekly-message-ID→`churchId` resolution (MVP-000) and the reaction-initiated survey (MVP-001); point `BOT-001`–`BOT-021` write logic at the Sheets API, tagging every write with the resolved `churchId`. | M.1 | An unregistered reaction starts only the surveyed church's registration and creates no request; after completion and a new reaction, the correctly-tagged `RideRequests` row is created. |
 | M.3 | Point `BOT-022`–`BOT-030` (driver ask) at the Sheets API, same `churchId`-tagging approach. | M.2 | A driver's YES/NO reply in either church updates the right `Drivers` row. |
 | M.4 | Write and locally test the zone-priority assignment function as a pure function taking one church's data at a time (per §29.8). | — | Passes hand-built edge-case scenarios, including a scenario proving it never looks at another church's rows. |
 | M.5 | Port the tested function into Apps Script; wire a Saturday time-driven trigger that loops `Churches` and calls the function once per row; implement `LockService` usage (MVP-008). | M.4 | Manually running the trigger against seeded two-church test data produces a correct `Assignments` sheet with no cross-church mixing. |
