@@ -52,7 +52,7 @@ Existing columns may be reordered; code maps them by header name.
 | Tab | Additional columns | Who sets them |
 |---|---|---|
 | Churches | `timezone`, `weeklySendDay`, `weeklySendTime`, `weeklyMessageTemplate` | Admin: IANA timezone (e.g. `America/Los_Angeles`), full English weekday (e.g. `Wednesday`), 24h `HH:mm`, and post text (max 2000 characters). No guessed timezone/schedule defaults. |
-| Churches | `activeMessageId`, `activeWeekDate`, `availabilityResetWeek` | Bot. Leave blank initially. Dates are the service Sunday, `YYYY-MM-DD`. |
+| Churches | `activeMessageId`, `activeWeekDate`, `availabilityResetWeek` | Bot. Clears all three on every process start; dates are the service Sunday, `YYYY-MM-DD`. |
 | Churches | `assignmentCompletedWeek` | Future assignment integration, or admin after a manual assignment run. Set to the service Sunday only **after assignments have actually completed**. Leave blank for this pass. |
 | Members | `phone`, `preferences`, `notificationPreference` | Registration; preference is `DISCORD_DM` in this MVP. |
 | RideRequests | `plusOnePhone`, `plusOnePromptId` | Bot; guest phone and the pending DM prompt. Guest names remain in the base `plusOneName` field. |
@@ -77,16 +77,14 @@ Boolean cells are written as actual Sheets booleans. User text is written with
 
 ## Timing, replies and recovery
 
-- The minute scheduler uses each church's timezone, including DST. The service
-  week ends on the local Sunday (Sunday itself still belongs to that week).
-- Weekly posts use the configured day/time. Missed posts are caught up on startup
-  or the next tick. A church gets one active post per service week; `/rides post`
-  is safe to repeat. Posts carry a recovery marker so a send followed by a failed
-  Sheet update can be found again without posting another message.
-- On the first tick in a new local service week, stale driver availability resets
-  to FALSE, including after downtime. Thursday 12:00 asks each active driver;
-  missed asks catch up through Saturday 11:44. Nonresponders remain FALSE.
-- Admin `/rides ask-drivers` also works immediately for testing and re-sends only
+**Manual mode:** every process start clears `activeMessageId`, `activeWeekDate`, and
+`availabilityResetWeek` for every church. The bot does not reconcile old reactions,
+run the scheduler, post automatically, reset availability automatically, or send
+driver asks automatically. It waits for an admin command. Use `/rides post church:ID`
+to create a new weekly post, `/rides sync church:ID` to reconcile it, and
+`/rides ask-drivers church:ID` to reset/ask drivers for that church.
+
+- Admin `/rides ask-drivers` works immediately for testing and re-sends only
   to drivers without a recorded response this week. To override availability,
   edit `isAvailableThisWeek` and set `availabilityWeek` to the current service Sunday.
   Set `respondedWeek` too if the override should suppress reminders/resends.
@@ -145,15 +143,15 @@ below mean the coming local service Sunday, not today's date.
    change. Reply `NO` to A's ask: only A becomes FALSE. B remains FALSE until its
    own valid answer. A driver who says NO can still react ✅ for a passenger ride.
    Re-run `/rides ask-drivers`: only nonresponders are asked. A non-admin cannot run it.
-5. **Restart/offline:** stop the bot; add ✅ for one user and remove ✅/1️⃣ for
-   another. Start it again: requests/guest fields reconcile. Reply to a previously
-   sent driver/+1 DM after restart: it still targets its original church. Run
-   `/rides sync` twice: no duplicate rows or completed guest prompts.
-6. **Schedules:** on test Church rows set `weeklySendDay` to today, `weeklySendTime`
-   a minute ahead, and clear `activeMessageId`/`activeWeekDate` for a fresh test week.
-   Confirm a post on the next tick and no second post after restart. Check Thursday
-   noon asks and the next week's availability reset (timezone/DST behavior is also
-   covered by automated tests). Clear test state before running a real service week.
+5. **Restart/manual reset:** stop and start the bot. Confirm both Church rows have
+   blank `activeMessageId`, `activeWeekDate`, and `availabilityResetWeek`, and no
+   post/driver ask occurs on its own. Run `/rides post church:church-a` and `/rides sync
+   church:church-a`; confirm the new post is the only active one and repeated syncs
+   create no duplicate rows or guest prompts. Reply to a previously sent driver/+1 DM
+   after restart: it still targets its original church.
+6. **Manual driver asks:** run `/rides ask-drivers church:church-a`; confirm availability
+   is reset and only the appropriate drivers are asked. The configured schedule fields
+   are retained for future automation but do not trigger actions in this manual mode.
 7. **Tenant/stale protections:** reply to an old-week prompt or another user's
    prompt: no write. Remove a test guild mapping after its prompts have been sent:
    further events must not write under another church. Duplicate mappings must log

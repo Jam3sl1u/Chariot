@@ -80,12 +80,10 @@ export class Bot {
           for (const command of commands) await guild.commands.create(command);
           this.initializedGuilds.add(resolved.discordGuildId);
         }
-        await this.reconcile(resolved);
+        await this.service.patch('Churches', resolved, {}, { activeMessageId: '', activeWeekDate: '', availabilityResetWeek: '' });
       }); } catch (error) { this.report(`Startup (${church.churchId})`, error); }
     }
-    await this.tick();
-    this.timer = setInterval(() => void this.tick(), 60_000);
-    console.log('Chariot is ready.');
+    console.log('Chariot is ready. Manual mode: use /rides commands to post, sync, or ask drivers.');
   }
 
   private modal(churchId: string) {
