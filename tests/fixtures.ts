@@ -1,4 +1,4 @@
-import { Collection, type Client, type Message } from 'discord.js';
+import { Collection, type Client, type Message, type MessageReaction, type User } from 'discord.js';
 import { DateTime } from 'luxon';
 import { Bot } from '../src/bot.js';
 import { Service } from '../src/service.js';
@@ -69,5 +69,13 @@ export function discordFixture(f: ReturnType<typeof fixture>) {
   const sendDM = async (user: string, content: string, prompt?: string) => {
     await (bot as unknown as { message: (m: Message) => Promise<void> }).message({ author: { id: user, bot: false }, guildId: null, content, reference: prompt ? { messageId: prompt } : undefined, reply: async (text: string) => { replies.push(text); } } as unknown as Message);
   };
-  return { bot, dms, replies, channels, sendDM };
+  const sendReaction = async (user: string, guildId: string, channelId: string, messageId: string, emoji = '✅') => {
+    let removed = false;
+    await (bot as unknown as { reaction: (r: MessageReaction, u: User, added: boolean) => Promise<void> }).reaction({
+      emoji: { name: emoji }, partial: false, users: { remove: async () => { removed = true; } },
+      message: { partial: false, id: messageId, guildId, channelId, author: { id: 'bot' }, reply: async (text: string) => { replies.push(text); } },
+    } as unknown as MessageReaction, { id: user, bot: false } as User, true);
+    return { removed };
+  };
+  return { bot, dms, replies, channels, sendDM, sendReaction };
 }

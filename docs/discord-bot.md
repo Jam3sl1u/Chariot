@@ -28,16 +28,18 @@ re-sends prompts to nonresponders. Guild channel chat is ignored.
    accounts, or read/write `Assignments`. Run it with the bot stopped.
 6. Configure every `Churches` row as described below. Run `npm run verify:sheets`
    to check API access and headers without printing IDs, member data or credentials.
-7. Invite the bot to both guilds with `bot` and `applications.commands` scopes.
-   In each weekly channel allow **View Channel**, **Send Messages**, **Embed Links**,
-   **Read Message History**, **Add Reactions**, and members' **Use Application Commands**.
+7. Invite the bot to the shared guild with `bot` and `applications.commands` scopes.
+   In the shared weekly channel allow **View Channel**, **Send Messages**, **Embed Links**,
+   **Read Message History**, **Add Reactions**, **Manage Messages** (to remove an
+   unregistered member's reaction), and members' **Use Application Commands**.
    Users must allow DMs from server members. The bot uses Guilds, GuildMessages,
    GuildMessageReactions and DirectMessages intents; no privileged Message Content
    intent is required for replies in DMs.
-8. Run `npm start` as **one persistent process**. Commands register in each configured
-   guild. `/register` only works in its configured weekly channel. `/rides` commands
-   require **Manage Server**, checked at execution as well as in command permissions.
-   A new church row + guild invite is discovered on the next minute tick.
+8. Run `npm start` as **one persistent process**. All churches share one configured
+   guild and weekly channel. An unregistered member starts that church's survey by
+   reacting to its weekly post; `/register` only repeats these instructions. `/rides`
+   commands require **Manage Server** and an explicit `church` ID, checked at execution
+   as well as in command permissions. A new church row is discovered on the next minute tick.
 
 Configuration is environment-only; no real token or Sheet ID belongs in source.
 `npm start` loads `.env` if present and also works with deployment-injected variables.
@@ -57,10 +59,10 @@ Existing columns may be reordered; code maps them by header name.
 | Drivers | `isActive` | Admin; blank/TRUE means active, FALSE disables asks/replies. |
 | Drivers | `availabilityWeek`, `askedWeek`, `askMessageId`, `respondedWeek` | Bot; scopes/reset/reply context for each week. |
 
-`Churches.churchId` and `weeklyPostChannelId` must each be unique. Multiple churches
-may share one `discordGuildId` only when each uses a separate configured weekly channel.
-`/register` and `/rides` are routed by that channel; reactions are routed by the weekly
-post's saved `activeMessageId`. Each other row's `churchId` must match a configured
+`Churches.churchId` must be unique. Every church row uses the same `discordGuildId` and
+`weeklyPostChannelId`; reactions are routed only by the weekly post's saved
+`activeMessageId`. An unregistered reaction is ignored (and removed when the bot has
+Manage Messages) while the member receives that post's church-specific survey DM. Each other row's `churchId` must match a configured
 church. The same Discord user can belong to both churches; use distinct driver/member rows for each. Each driver needs a unique
 `driverId`, its `churchId`, `name`, `discordId`, `seatsAvailable`, and `homeZone`.
 Set `isAvailableThisWeek` to FALSE initially. `memberId` is optional and does not
@@ -116,28 +118,28 @@ a failure between them can require a resend or `/rides sync`.
 
 ## Exact manual acceptance test
 
-Use test users in two test guilds and watch the Sheet after each action. All dates
+Use test users in one shared test guild and channel and watch the Sheet after each action. All dates
 below mean the coming local service Sunday, not today's date.
 
-1. **Registration in both churches:** run `/register` in each weekly channel using
-   the same Discord account. Submit name, `+12025550123`, preferences; choose a
-   local zone, then Discord DM. Expect two `Members` rows with different member IDs
-   and correct `churchId`s, and two welcome DMs. Repeat in church A with a new name
-   and **Other / Not Listed**: the existing A row updates; B is unchanged. Invalid
-   phones must fail without a row. In another channel, `/register` must refuse.
-2. **Post and ride:** as an admin run `/rides post` in both guilds. Expect the
-   configured text and ✅/1️⃣ anchors; correct `activeMessageId`/`activeWeekDate` in
-   each Church row. Run it twice: no duplicate. React ✅ in A: exactly one PENDING
-   A request. Remove it: CANCELLED. Re-add: same requestId becomes PENDING. React
-   in B: a separate B row. Reactions to unrelated/previous-week messages do nothing.
-   A user without registration must receive a `/register` DM and create no request.
+1. **Registration in both churches:** as an admin, run `/rides post church:church-a`
+   and `/rides post church:church-b` in the shared channel. Each post has its own ✅/1️⃣
+   anchors and saved `activeMessageId`. React ✅ to A as a new user: the reaction is
+   removed, a Church A survey DM arrives, and no request exists. Complete the survey
+   with name, `+12025550123`, preferences, and a local zone; then react ✅ to A again.
+   Expect one PENDING A request. Repeat from B's post with the same account: expect a
+   distinct B `Members` row and B request. Invalid survey data must not create a row.
+2. **Post routing and cancellation:** re-run either church's `/rides post` command:
+   expect no duplicate for that church. Remove ✅ from A: only A becomes CANCELLED.
+   Re-add it: the same A request becomes PENDING. Reactions to unrelated or
+   previous-week messages do nothing.
 3. **Guest:** react 1️⃣ after ✅. Reply to that DM with `Test Guest` on line 1 and
    `+12025550123` on line 2. Expect `hasPlusOne=TRUE`, name and phone on that week's
    request only. Invalid phones must not save. Remove 1️⃣: FALSE and cleared name/
    phone. Re-add and submit another guest: same ride row, still only one guest.
    React 1️⃣ before ✅: guidance to request your own ride first.
 4. **Driver replies:** seed driver rows for the same Discord account in both
-   churches; run `/rides ask-drivers` in each. Expect two labeled DMs, FALSE default,
+   churches; run `/rides ask-drivers church:church-a` and then `church:church-b`.
+   Expect two labeled DMs, FALSE default,
    and distinct saved ask IDs. Send bare `YES`: the bot must ask you to select a
    prompt. Reply `yes` to A's ask: only A becomes TRUE. Reply `maybe`: error and no
    change. Reply `NO` to A's ask: only A becomes FALSE. B remains FALSE until its

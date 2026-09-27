@@ -11,15 +11,16 @@ import { Service, InputError, truth, validPhone } from './service.js';
 import { localTime, weekDate, weeklyDue } from './time.js';
 
 export const commands = [
-  new SlashCommandBuilder().setName('register').setDescription('Register or update your ride profile'),
+  new SlashCommandBuilder().setName('register').setDescription('Learn how to register for church rides'),
   new SlashCommandBuilder().setName('rides').setDescription('Manage church rides')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-    .addSubcommand(s => s.setName('post').setDescription('Post the current weekly ride request'))
-    .addSubcommand(s => s.setName('sync').setDescription('Reconcile reactions on the current post'))
-    .addSubcommand(s => s.setName('ask-drivers').setDescription('Ask drivers who have not replied this week')),
+    .addSubcommand(s => s.setName('post').setDescription('Post the current weekly ride request').addStringOption(o => o.setName('church').setDescription('Church ID').setRequired(true)))
+    .addSubcommand(s => s.setName('sync').setDescription('Reconcile reactions on the current post').addStringOption(o => o.setName('church').setDescription('Church ID').setRequired(true)))
+    .addSubcommand(s => s.setName('ask-drivers').setDescription('Ask drivers who have not replied this week').addStringOption(o => o.setName('church').setDescription('Church ID').setRequired(true))),
 ].map(c => c.toJSON());
 
-type Registration = { guildId: string; userId: string; expires: number; data: Row; zones: string[] };
+type Registration = { churchId: string; userId: string; expires: number; data: Row; zones: string[] };
+type Survey = { churchId: string; userId: string; expires: number };
 export function createClient() {
   return new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildMessageReactions, GatewayIntentBits.DirectMessages],
@@ -30,6 +31,7 @@ export function createClient() {
 
 export class Bot {
   private registrations = new Map<string, Registration>();
+  private surveys = new Map<string, Survey>();
   private churchCache: Row[] = [];
   private timer?: ReturnType<typeof setInterval>;
   private ticking = false;
@@ -40,8 +42,8 @@ export class Bot {
     // Never dump Google/Discord HTTP errors: they may contain credentials or personal data.
     console.error(`${context}: ${error instanceof InputError ? error.message : 'operation failed; check configuration, permissions and connectivity'}`);
   }
-  private async dm(userId: string, content: string) {
-    return (await this.client.users.fetch(userId)).send({ content, allowedMentions: { parse: [] } });
+  private async dm(userId: string, content: string, components: ActionRowBuilder<ButtonBuilder>[] = []) {
+    return (await this.client.users.fetch(userId)).send({ content, components, allowedMentions: { parse: [] } });
   }
   private async channel(church: Row) {
     const channel = await this.client.channels.fetch(church.weeklyPostChannelId);
@@ -82,11 +84,24 @@ export class Bot {
     console.log('Chariot is ready.');
   }
 
-  private modal() {
+  private modal(churchId: string) {
     const field = (id: string, label: string, required: boolean, max: number, style = TextInputStyle.Short) => new ActionRowBuilder<TextInputBuilder>().addComponents(new TextInputBuilder().setCustomId(id).setLabel(label).setStyle(style).setRequired(required).setMaxLength(max));
-    return new ModalBuilder().setCustomId('register-form').setTitle('Register for church rides').addComponents(
+    return new ModalBuilder().setCustomId(`register-form:${churchId}`).setTitle('Register for church rides').addComponents(
       field('name', 'Full name', true, 100), field('phone', 'US phone (+12025550123)', true, 12), field('preferences', 'Ride preferences (optional)', false, 1000, TextInputStyle.Paragraph),
     );
+  }
+  private surveyKey(churchId: string, userId: string) { return `${churchId}:${userId}`; }
+  private async startSurvey(church: Row, userId: string, message: Message) {
+    const key = this.surveyKey(church.churchId, userId);
+    const current = this.surveys.get(key);
+    if (current && current.expires >= Date.now()) return;
+    this.surveys.set(key, { churchId: church.churchId, userId, expires: Date.now() + 15 * 60_000 });
+    try {
+      await this.dm(userId, `[${church.churchName}] Complete your registration survey before requesting a ride.`, [new ActionRowBuilder<ButtonBuilder>().addComponents(new ButtonBuilder().setCustomId(`survey:${church.churchId}`).setLabel('Start survey').setStyle(ButtonStyle.Primary))]);
+    } catch {
+      this.surveys.delete(key);
+      await message.reply({ content: `<@${userId}>, enable direct messages from server members, then react again to start the registration survey.`, allowedMentions: { users: [userId], roles: [], repliedUser: false } });
+    }
   }
   private zoneComponents(id: string, session: Registration, page = 0) {
     const zones = session.zones.slice(page * 24, page * 24 + 24);
@@ -105,18 +120,35 @@ export class Bot {
     if (!i.isChatInputCommand() && !i.isModalSubmit() && !i.isStringSelectMenu() && !i.isButton()) return;
     try {
       if (i.isChatInputCommand() && i.commandName === 'register') {
-        // Opening a modal must be the first response. Validate fresh mapping on submission.
-        const matches = this.churchCache.filter(c => c.discordGuildId === i.guildId && c.weeklyPostChannelId === i.channelId);
-        if (matches.length !== 1) { await i.reply({ content: 'Use /register in your church’s configured weekly rides channel.', flags: MessageFlags.Ephemeral }); return; }
-        await i.showModal(this.modal()); return;
+        await i.reply({ content: 'React ✅ or 1️⃣ on the weekly post for your church to start its registration survey.', flags: MessageFlags.Ephemeral }); return;
+      }
+      if (i.isButton() && i.customId.startsWith('survey:')) {
+        const churchId = i.customId.slice('survey:'.length);
+        const survey = this.surveys.get(this.surveyKey(churchId, i.user.id));
+        if (!survey || survey.expires < Date.now()) throw new InputError('Your survey link expired. React to the weekly post again to start over.');
+        await i.showModal(this.modal(churchId)); return;
       }
       await i.deferReply({ flags: MessageFlags.Ephemeral });
-      if (!i.guildId || !i.channelId) throw new InputError('Use this command in your church’s configured weekly rides channel.');
+      let churchId: string | undefined;
+      if (i.isChatInputCommand()) {
+        if (!i.guildId || !i.channelId) throw new InputError('Use this command in the shared rides channel.');
+        churchId = i.options.getString('church', true);
+      } else if (i.isModalSubmit()) {
+        const [kind, id] = i.customId.split(':');
+        if (kind !== 'register-form' || !id) throw new InputError('Invalid registration survey. React to the weekly post again.');
+        churchId = id;
+      } else {
+        const [, id] = i.customId.split(':');
+        const session = id ? this.registrations.get(id) : undefined;
+        if (!session || session.userId !== i.user.id) throw new InputError('Registration expired. React to the weekly post again.');
+        churchId = session.churchId;
+      }
       let recognized = false;
-      await this.service.runChannel(i.guildId, i.channelId, async church => {
+      await this.service.runChurch(churchId, async church => {
         recognized = true;
         if (i.isChatInputCommand()) {
           if (i.commandName !== 'rides') return;
+          if (church.discordGuildId !== i.guildId || church.weeklyPostChannelId !== i.channelId) throw new InputError('Use this command in the shared rides channel with a configured church ID.');
           if (!i.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) throw new InputError('Manage Server permission is required.');
           const sub = i.options.getSubcommand();
           if (sub === 'post') await this.post(church);
@@ -124,21 +156,21 @@ export class Bot {
           if (sub === 'ask-drivers') { await this.reset(church); await this.ask(church, true); }
           await i.editReply('Completed.'); return;
         }
-        if (i.channelId !== church.weeklyPostChannelId) throw new InputError('Use the configured weekly rides channel.');
         for (const [key, value] of this.registrations) if (value.expires < Date.now()) this.registrations.delete(key);
-        if (i.isModalSubmit() && i.customId === 'register-form') {
+        for (const [key, value] of this.surveys) if (value.expires < Date.now()) this.surveys.delete(key);
+        if (i.isModalSubmit() && i.customId.startsWith('register-form:')) {
           const data = { name: i.fields.getTextInputValue('name').trim(), phone: i.fields.getTextInputValue('phone').trim(), preferences: i.fields.getTextInputValue('preferences').trim() };
           if (!data.name || !validPhone(data.phone)) throw new InputError('Enter your name and a valid US E.164 phone (+12025550123). Run /register again.');
           const zones = (await this.service.rows('Zones', church)).sort((a, b) => Number(a.zonePriorityOrder) - Number(b.zonePriorityOrder)).map(z => z.zoneName).filter(z => z && z !== 'Other / Not Listed');
           const id = randomUUID();
-          const session = { guildId: i.guildId!, userId: i.user.id, expires: Date.now() + 15 * 60_000, data, zones: [...new Set(zones)] };
+          const session = { churchId: church.churchId, userId: i.user.id, expires: Date.now() + 15 * 60_000, data, zones: [...new Set(zones)] };
           this.registrations.set(id, session);
           await i.editReply({ content: 'Choose your pickup location. Registration expires in 15 minutes.', components: this.zoneComponents(id, session) }); return;
         }
         if (!i.isButton() && !i.isStringSelectMenu()) return;
         const [action, id, pageText] = i.customId.split(':');
         const session = this.registrations.get(id);
-        if (!session || session.guildId !== i.guildId || session.userId !== i.user.id) throw new InputError('Registration expired. Please run /register again.');
+        if (!session || session.churchId !== church.churchId || session.userId !== i.user.id) throw new InputError('Registration expired. React to the weekly post again.');
         if (action === 'page') {
           const page = Number(pageText);
           if (!Number.isInteger(page) || page < 0 || page * 24 >= session.zones.length) throw new InputError('Invalid location page.');
@@ -151,13 +183,14 @@ export class Bot {
         } else if (action === 'finish' && i.isStringSelectMenu() && session.data.zone) {
           await this.service.register(church, i.user.id, session.data);
           this.registrations.delete(id);
+          this.surveys.delete(this.surveyKey(church.churchId, i.user.id));
           try {
-            await this.dm(i.user.id, `Welcome to ${church.churchName}, ${session.data.name}! Your registration is saved. React ✅ on the weekly rides post to request a ride; react 1️⃣ to bring one guest. Notifications arrive here by Discord DM.`);
+            await this.dm(i.user.id, `Welcome to ${church.churchName}, ${session.data.name}! Your registration is saved. React again to this church's weekly post: ✅ requests a ride and 1️⃣ adds one guest. Notifications arrive here by Discord DM.`);
             await i.editReply('Registration saved. Check your DMs!');
           } catch { await i.editReply('Registration saved, but I could not DM you. Enable direct messages from server members to receive ride messages.'); }
         }
       });
-      if (!recognized) await i.editReply('This server is not configured for Chariot.');
+      if (!recognized) await i.editReply('This church survey or command is no longer configured. React to the weekly post again.');
     } catch (error) {
       this.report('Interaction', error);
       const content = error instanceof InputError ? error.message : 'Could not complete that action. Please try again; if it persists, contact an admin.';
@@ -173,6 +206,11 @@ export class Bot {
       if (!message.guildId || message.author?.id !== this.client.user?.id) return;
       await this.service.runMessage(message.guildId, message.id, async church => {
         if (message.channelId !== church.weeklyPostChannelId) return;
+        if (added && !await this.service.member(church, user.id)) {
+          try { await reaction.users.remove(user.id); } catch { /* Missing Manage Messages permission leaves an ignored reaction visible. */ }
+          await this.startSurvey(church, user.id, message);
+          return;
+        }
         const ride = await this.service.reaction(church, user.id, message.id, reaction.emoji.name!, added);
         if (ride) await this.promptPlus(church, user.id, ride);
       });
