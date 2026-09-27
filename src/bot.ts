@@ -263,8 +263,7 @@ export class Bot {
     if (church.activeMessageId && church.activeWeekDate === week) return;
     if (!church.weeklyMessageTemplate?.trim()) throw new InputError('Set weeklyMessageTemplate in Churches before posting.');
     const channel = await this.channel(church);
-    const marker = `chariot:weekly:${church.churchId}:${week}`;
-    const message = await channel.send({ content: church.weeklyMessageTemplate, embeds: [{ footer: { text: marker } }], allowedMentions: { parse: [] } });
+    const message = await channel.send({ content: church.weeklyMessageTemplate, allowedMentions: { parse: [] } });
     await this.service.patch('Churches', church, {}, { activeMessageId: message.id, activeWeekDate: week });
     await message.react('✅');
     await message.react('1️⃣');
