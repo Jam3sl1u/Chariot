@@ -46,8 +46,8 @@ export class Bot {
     const status = typeof details.status === 'number' ? `; HTTP ${details.status}` : '';
     console.error(`${context}: operation failed; check configuration, permissions and connectivity${code}${status}`);
   }
-  private async dm(userId: string, content: string) {
-    return (await this.client.users.fetch(userId)).send({ content, allowedMentions: { parse: [] } });
+  private async dm(userId: string, content: string, components: ActionRowBuilder<ButtonBuilder>[] = []) {
+    return (await this.client.users.fetch(userId)).send({ content, components, allowedMentions: { parse: [] } });
   }
   private async channel(church: Row) {
     const channel = await this.client.channels.fetch(church.weeklyPostChannelId);
@@ -93,12 +93,16 @@ export class Bot {
     );
   }
   private surveyKey(churchId: string, userId: string) { return `${churchId}:${userId}`; }
-  private async startSurvey(church: Row, userId: string, message: Message) {
+  private async startSurvey(church: Row, userId: string) {
     const key = this.surveyKey(church.churchId, userId);
     const current = this.surveys.get(key);
     if (current && current.expires >= Date.now()) return;
     this.surveys.set(key, { churchId: church.churchId, userId, expires: Date.now() + 15 * 60_000 });
-    await message.reply({ content: `<@${userId}>, complete the ${church.churchName} registration survey before requesting a ride.`, components: [new ActionRowBuilder<ButtonBuilder>().addComponents(new ButtonBuilder().setCustomId(`survey:${church.churchId}`).setLabel('Start registration').setStyle(ButtonStyle.Primary))], allowedMentions: { users: [userId], roles: [], repliedUser: false } });
+    try {
+      await this.dm(userId, `[${church.churchName}] Complete your registration survey before requesting a ride.`, [new ActionRowBuilder<ButtonBuilder>().addComponents(new ButtonBuilder().setCustomId(`survey:${church.churchId}`).setLabel('Start registration').setStyle(ButtonStyle.Primary))]);
+    } catch {
+      this.surveys.delete(key);
+    }
   }
   private zoneComponents(id: string, session: Registration, page = 0) {
     const zones = session.zones.slice(page * 24, page * 24 + 24);
@@ -206,8 +210,7 @@ export class Bot {
       await this.service.runMessage(message.guildId, message.id, async church => {
         if (message.channelId !== church.weeklyPostChannelId) return;
         if (added && !await this.service.member(church, user.id)) {
-          try { await reaction.users.remove(user.id); } catch { /* Missing Manage Messages permission leaves an ignored reaction visible. */ }
-          await this.startSurvey(church, user.id, message);
+          await this.startSurvey(church, user.id);
           return;
         }
         const ride = await this.service.reaction(church, user.id, message.id, reaction.emoji.name!, added);

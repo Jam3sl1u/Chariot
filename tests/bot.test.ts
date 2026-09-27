@@ -84,7 +84,7 @@ test('an unregistered reaction starts a church-specific survey without creating 
   f.b.discordGuildId = 'guild-a'; f.b.weeklyPostChannelId = 'channel-a';
   const d = discordFixture(f);
   const first = await d.sendReaction('new-member', 'guild-a', 'channel-a', 'post-a');
-  assert.equal(first.removed, true); assert.equal(d.dms.length, 0); assert.match(d.replies.at(-1)!, /Church a registration survey/);
+  assert.equal(first.removed, false); assert.equal(d.dms.length, 1); assert.match(d.dms[0].content, /Church a/);
   assert.equal(f.db.data.Members.length, 0); assert.equal(f.db.data.RideRequests.length, 0);
   await f.service.runChurch('a', c => f.service.register(c, 'new-member', { name: 'New Member', phone: '+12025550123', zone: 'Zone a' }));
   const second = await d.sendReaction('new-member', 'guild-a', 'channel-a', 'post-a');

@@ -700,8 +700,8 @@ Members register through a **church-specific survey initiated by their first rea
 
 **Discord reaction-initiated survey flow:**
 1. Member reacts ✅ or 1️⃣ to one church's current weekly post in the shared rides channel. The post's `activeMessageId` identifies that church.
-2. If the member has no completed `MemberChurch` registration for that church, the bot does **not** create a ride request or +1. It ignores the reaction and removes it when it has Discord's Manage Messages permission; the Discord client cannot prevent a user from clicking a reaction in the first place.
-3. The bot replies in the shared channel, mentioning that member and showing a **Start registration** button for that church. The prompt contains no personal data and only its intended member can use the button.
+2. If the member has no completed `MemberChurch` registration for that church, the bot does **not** create a ride request or +1. It leaves the reaction visible but ignores it.
+3. The bot sends the member a DM with a **Start registration** button for that church. Only its intended member can use the button. If DMs are disabled, no registration or ride request is created.
 4. The button opens a modal: name, phone (US E.164 validated), preferences. After submission, the bot presents a pickup-location dropdown populated from that church's `PickupPoint` registry, always including "Other / Not Listed" last, then asks notification preference: **SMS** or **Discord DM**.
 5. Bot checks if a `Member` with that phone number already exists:
    - **New account** → create `Member` row with chosen preference, then create `MemberChurch` record
@@ -721,13 +721,13 @@ Members register through a **church-specific survey initiated by their first rea
 | ID | Requirement | Priority | Status |
 |---|---|---|---|
 | BOT-001 | All Church rows use one configured Discord guild and one configured rides channel; each church's active weekly post is identified by its unique `activeMessageId`. | HIGH | PLANNED |
-| BOT-002 | A first ✅ or 1️⃣ reaction by a member not registered for that post's church creates an in-channel, member-specific **Start registration** button for that church; it never creates a ride request or +1. | HIGH | PLANNED |
+| BOT-002 | A first ✅ or 1️⃣ reaction by a member not registered for that post's church leaves the reaction visible but sends that member a church-specific DM with a **Start registration** button; it never creates a ride request or +1. | HIGH | PLANNED |
 | BOT-003 | The survey collects name, phone (US E.164 validated), preferences, and a pickup location dynamically populated from that church's `PickupPoint` registry plus "Other / Not Listed." | HIGH | PLANNED |
 | BOT-004 | The survey collects a notification preference: SMS or Discord DM. | HIGH | PLANNED |
 | BOT-005 | On completion, create `Member` with chosen preference if phone doesn't exist; always create `MemberChurch` if not already joined. | HIGH | PLANNED |
 | BOT-006 | Bot sends an ephemeral confirmation and instructs the member to react again to request a ride. | HIGH | PLANNED |
 | BOT-007 | No registration welcome DM is sent in the manual MVP flow. | HIGH | PLANNED |
-| BOT-008 | For an unregistered reaction, the bot ignores the reaction (and removes it when permitted), posts the church-specific **Start registration** button in the shared channel for that member, and creates no ride request. | HIGH | PLANNED |
+| BOT-008 | For an unregistered reaction, the bot leaves the reaction visible but ignores it, sends the church-specific **Start registration** button by DM, and creates no ride request. | HIGH | PLANNED |
 | BOT-009 | Members can update their registration through the church-specific survey link in their confirmation DM. | MEDIUM | PLANNED |
 | WEB-A01 | Web signup page (`/join/[slug]`) is publicly accessible — no login required. | HIGH | PLANNED |
 | WEB-A02 | General signup page (`/join`) shows a list of all active churches; user selects exactly one. | HIGH | PLANNED |
@@ -3628,6 +3628,7 @@ Conventions: tasks within a phase that share no files can run in parallel; a tas
 | 2.4 | 2026-09-27 | Reworked Discord routing for the shared-community flow. All churches share one Discord guild and rides channel; each church has a distinct weekly post and its `activeMessageId` routes reactions. Replaced slash-command-first registration with a church-specific survey initiated by an unregistered member's first ✅/1️⃣ reaction; that first reaction is ignored (and removed when permitted), and the member must complete the survey then react again before a ride request is created. Updated the full-platform Church schema, multi-church rules, Discord requirements, and MVP §29 requirements/build tasks accordingly. |
 | 2.5 | 2026-09-27 | Moved the reaction-initiated survey entry point from DM to the shared channel. An unregistered reaction now produces a member-specific, non-sensitive **Start registration** button under that church's weekly post; clicking it opens the same survey modal. |
 | 2.6 | 2026-09-27 | Set the MVP bot to explicit manual mode: every start clears active-post and availability-reset state, performs no reconciliation or scheduled work, and waits for admin `/rides` commands. |
+| 2.7 | 2026-09-27 | Moved the initial registration button back to DM and stopped removing unregistered reactions. Such reactions stay visible but do not create requests; registration confirmation remains DM-free. |
 
 ---
 
@@ -3686,7 +3687,7 @@ This section defines a deliberately minimal MVP that precedes the full platform 
 
 ### 29.1 MVP Architecture
 
-- **Discord bot** (Node.js/discord.js) — one bot process serves all churches in one shared Discord guild and rides channel. It routes a reaction by the specific weekly post's `activeMessageId`, not by guild/channel, and posts a church-specific **Start registration** button in-channel when an unregistered member first reacts. Runs as a persistent process (Railway free tier, per §16.1) since it needs an always-on Discord gateway connection.
+- **Discord bot** (Node.js/discord.js) — one bot process serves all churches in one shared Discord guild and rides channel. It routes a reaction by the specific weekly post's `activeMessageId`, not by guild/channel, and DMs a church-specific **Start registration** button when an unregistered member first reacts. Runs as a persistent process (Railway free tier, per §16.1) since it needs an always-on Discord gateway connection.
 - **One Google Sheet, shared by all churches** — replaces Postgres as the data store. Every data tab carries a `churchId` column, mirroring the full platform's own tenant-scoping principle (Business Rules Index, §27). A `Churches` config tab holds each church's `churchId`, with the shared `discordGuildId` and `weeklyPostChannelId`, plus its own weekly-post message state.
 - **Google Apps Script**, bound to that sheet — replaces the assignment-algorithm service. Runs on a time-driven trigger (Saturday, matching BE-012's timing) and **loops once per row in `Churches`**, computing and writing assignments separately for each — riders and drivers are never mixed across churches, even though they live in the same sheet.
 - **Google Sheets API** — the bot reads/writes the sheet via a Google Cloud service account (JSON key) and the `googleapis` Node client. No Prisma, no Postgres, no Vercel, no Neon.
@@ -3732,7 +3733,7 @@ Web application and member portal (§5) · Postgres/Prisma schema (§6) · auth/
 | ID | Requirement | Priority | Status |
 |---|---|---|---|
 | MVP-000 | All Churches rows use the same configured Discord guild and rides channel. On a weekly-post reaction, the bot resolves `(guildId, channelId, messageId)` → exactly one `churchId` through that church's `activeMessageId`; unknown or ambiguous messages are logged and dropped, never written under a guessed church. | HIGH | PLANNED |
-| MVP-001 | An unregistered member's first ✅ or 1️⃣ reaction to a church's weekly post posts that church's member-specific **Start registration** button in the shared channel and writes neither `Members` nor `RideRequests` until the survey is completed. On survey completion, the bot creates or updates the `Members` row by `discordId` + `churchId`; the member must react again to request a ride. | HIGH | PLANNED |
+| MVP-001 | An unregistered member's first ✅ or 1️⃣ reaction to a church's weekly post leaves the reaction visible but sends that church's member-specific **Start registration** button by DM and writes neither `Members` nor `RideRequests` until the survey is completed. On survey completion, the bot creates or updates the `Members` row by `discordId` + `churchId`; the member must react again to request a ride. | HIGH | PLANNED |
 | MVP-002 | ✅/removal of ✅ on a weekly post creates/cancels a `RideRequests` row only for a member already registered for that post's church, week, and `churchId`. | HIGH | PLANNED |
 | MVP-009 | On every bot process start, clear `activeMessageId`, `activeWeekDate`, and `availabilityResetWeek` for every Church row. The bot performs no automatic scheduled/reconciliation work and waits for an admin `/rides` command. | HIGH | PLANNED |
 | MVP-003 | 1️⃣ reaction flow writes `hasPlusOne`/`plusOneName` onto the member's `RideRequests` row for that week. | HIGH | PLANNED |

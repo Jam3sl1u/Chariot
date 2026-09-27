@@ -30,8 +30,7 @@ re-sends prompts to nonresponders. Guild channel chat is ignored.
    to check API access and headers without printing IDs, member data or credentials.
 7. Invite the bot to the shared guild with `bot` and `applications.commands` scopes.
    In the shared weekly channel allow **View Channel**, **Send Messages**, **Embed Links**,
-   **Read Message History**, **Add Reactions**, **Manage Messages** (to remove an
-   unregistered member's reaction), and members' **Use Application Commands**.
+   **Read Message History**, **Add Reactions**, and members' **Use Application Commands**.
    Users must allow DMs from server members. The bot uses Guilds, GuildMessages,
    GuildMessageReactions and DirectMessages intents; no privileged Message Content
    intent is required for replies in DMs.
@@ -61,8 +60,8 @@ Existing columns may be reordered; code maps them by header name.
 
 `Churches.churchId` must be unique. Every church row uses the same `discordGuildId` and
 `weeklyPostChannelId`; reactions are routed only by the weekly post's saved
-`activeMessageId`. An unregistered reaction is ignored (and removed when the bot has
-Manage Messages) while the bot posts that member's church-specific **Start registration** button in the shared channel. Each other row's `churchId` must match a configured
+`activeMessageId`. An unregistered reaction remains visible but is ignored while the
+bot DMs that member a church-specific **Start registration** button. Each other row's `churchId` must match a configured
 church. The same Discord user can belong to both churches; use distinct driver/member rows for each. Each driver needs a unique
 `driverId`, its `churchId`, `name`, `discordId`, `seatsAvailable`, and `homeZone`.
 Set `isAvailableThisWeek` to FALSE initially. `memberId` is optional and does not
@@ -122,8 +121,8 @@ below mean the coming local service Sunday, not today's date.
 
 1. **Registration in both churches:** as an admin, run `/rides post church:church-a`
    and `/rides post church:church-b` in the shared channel. Each post has its own ✅/1️⃣
-   anchors and saved `activeMessageId`. React ✅ to A as a new user: the reaction is
-   removed, an in-channel Church A **Start registration** button appears, and no request exists. Complete the survey
+   anchors and saved `activeMessageId`. React ✅ to A as a new user: the reaction remains,
+   a Church A **Start registration** button arrives by DM, and no request exists. Complete the survey
    with name, `+12025550123`, preferences, and a local zone; then react ✅ to A again.
    Expect one PENDING A request. Repeat from B's post with the same account: expect a
    distinct B `Members` row and B request. The registration confirmation is an
