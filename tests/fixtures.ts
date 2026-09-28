@@ -18,7 +18,7 @@ export function fixture() {
   const db = new Memory();
   for (const id of ['a', 'b']) {
     db.data.Churches.push({ churchId: id, churchName: `Church ${id}`, discordGuildId: `guild-${id}`, weeklyPostChannelId: `channel-${id}`, driverAskChannelId: `drivers-${id}`, timezone: 'America/Los_Angeles', weeklySendDay: 'Wednesday', weeklySendTime: '09:00', weeklyMessageTemplate: 'React ✅ for a ride. Deadline Saturday at 10am.', activeMessageId: `post-${id}`, activeWeekDate: '2026-09-27', availabilityResetWeek: '', assignmentCompletedWeek: '' });
-    db.data.Zones.push({ churchId: id, zoneId: `zone-${id}`, zoneName: `Zone ${id}`, zonePriorityOrder: '1' });
+    db.data.Zones.push({ zoneId: `zone-${id}`, zoneName: `Zone ${id}`, zonePriorityOrder: '1' });
   }
   let now = DateTime.fromISO('2026-09-24T12:00:00', { zone: 'America/Los_Angeles' });
   const service = new Service(db, () => now);

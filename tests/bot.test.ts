@@ -74,15 +74,19 @@ test('manual sync clears a missing active weekly post', async () => {
   await f.service.runChurch('a', c => d.bot.reconcile(c));
   assert.equal(f.db.data.Churches[0].activeMessageId, ''); assert.equal(f.db.data.Churches[0].activeWeekDate, '');
 });
-test('an unregistered reaction starts one shared survey without creating a ride request', async () => {
+test('an unregistered reaction starts one shared survey, creates a pending profile, and requests a ride', async () => {
   const f = fixture();
   f.b.discordGuildId = 'guild-a'; f.b.weeklyPostChannelId = 'channel-a';
   f.a.registrationDmTemplate = 'Welcome to {churchName}! Tap below to register.';
   const d = discordFixture(f);
   const first = await d.sendReaction('new-member', 'guild-a', 'channel-a', 'post-a', '🚙');
   assert.equal(first.removed, false); assert.equal(d.dms.length, 1); assert.equal(d.dms[0].content, 'Welcome to Church a! Tap below to register.');
-  assert.equal(f.db.data.Members.length, 0); assert.equal(f.db.data.RideRequests.length, 0);
+  assert.equal(f.db.data.Members.length, 1); assert.deepEqual(f.db.data.Members[0], {
+    memberId: f.db.data.Members[0].memberId, churchId: 'a', discordId: 'new-member', createdAt: f.db.data.Members[0].createdAt,
+    profileStatus: 'PENDING', name: '', phone: '', preferences: '', zone: '', notificationPreference: '',
+  }); assert.equal(f.db.data.RideRequests.length, 1); assert.equal(f.db.data.RideRequests[0].status, 'PENDING');
   await f.service.runChurch('a', c => f.service.register(c, 'new-member', { name: 'New Member', phone: '+12025550123', zone: 'Zone a' }));
+  assert.equal(f.db.data.Members.length, 1); assert.equal(f.db.data.Members[0].profileStatus, 'COMPLETE');
   const second = await d.sendReaction('new-member', 'guild-a', 'channel-a', 'post-a');
   assert.equal(second.removed, false); assert.equal(f.db.data.RideRequests.length, 1); assert.equal(f.db.data.RideRequests[0].churchId, 'a');
   await d.sendReaction('new-member', 'guild-a', 'channel-a', 'post-b', '🎉');

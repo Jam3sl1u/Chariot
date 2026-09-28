@@ -7,6 +7,8 @@
     "setup:sheets": "tsx --env-file-if-exists=.env src/setup.ts",
     "verify:sheets": "tsx --env-file-if-exists=.env verification-script.ts",
     "seed:assignment-test": "tsx --env-file-if-exists=.env scripts/seed-assignment-test.ts",
+    "seed:priority-zones": "tsx --env-file-if-exists=.env scripts/seed-priority-zones.ts",
+    "migrate:zones-global": "tsx --env-file-if-exists=.env scripts/migrate-zones-global.ts",
     "verify:assignment-test": "tsx --env-file-if-exists=.env scripts/verify-assignment-test.ts",
     "typecheck:verification": "tsc --noEmit",
     "typecheck": "tsc --noEmit",

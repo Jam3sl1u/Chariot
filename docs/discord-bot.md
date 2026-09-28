@@ -6,7 +6,7 @@ The PRD is at `documentation/prd/Chariot_PRD_v2_3.md`.
 The MVP uses Discord DMs, per §29.2–29.4. There is no SMS selector, portal link,
 password setup, standing request, waitlist autofill, or assignment-result notification
 job. Registering updates by `(churchId, discordId)`.
-Pickup choices come from that church's `Zones` rows plus **Other / Not Listed**.
+Pickup choices come from the shared `Zones` registry plus **Other / Not Listed**.
 Admin availability overrides happen by editing the Sheet; `/rides ask-drivers`
 re-sends prompts to nonresponders. Guild channel chat is ignored.
 
@@ -28,6 +28,10 @@ re-sends prompts to nonresponders. Guild channel chat is ignored.
    accounts. Run it with the bot stopped.
 6. Configure every `Churches` row as described below. Run `npm run verify:sheets`
    to check API access and headers without printing IDs, member data or credentials.
+   Run `npm run migrate:zones-global` once to convert old church-scoped zone rows
+   into one shared registry, then `npm run seed:priority-zones` to populate the
+   agreed UCI housing zones. The seed is safe to rerun: matching names are updated
+   and missing names are added.
 7. Invite the bot to the shared guild with `bot` and `applications.commands` scopes.
    In the shared weekly channel allow **View Channel**, **Send Messages**, **Embed Links**,
    **Read Message History**, **Add Reactions**, and members' **Use Application Commands**.
@@ -35,8 +39,8 @@ re-sends prompts to nonresponders. Guild channel chat is ignored.
    GuildMessageReactions and DirectMessages intents; no privileged Message Content
    intent is required for replies in DMs.
 8. Run `npm start` as **one persistent process**. All churches share one configured
-   guild and weekly channel. An unregistered member starts that church's survey by
-   reacting to its weekly post; `/register` only repeats these instructions. `/rides`
+   guild and weekly channel. An unregistered member starts that church's survey and
+   creates a temporary ride request by reacting to its weekly post; `/register` only repeats these instructions. `/rides`
    commands require **Manage Server** and an explicit `church` ID, checked at execution
    as well as in command permissions. A new church row is discovered on the next minute tick.
 
@@ -71,6 +75,12 @@ row's `churchId` must match a configured church. Each driver needs a unique
 Set `isAvailableThisWeek` to FALSE initially. `memberId` is optional and does not
 prevent a driver from requesting a passenger ride when they answer NO.
 
+An initial reaction by an unregistered person creates a `Members` row with
+`profileStatus = PENDING` and a `PENDING` ride request. Completing the
+survey upgrades it to `COMPLETE`. An admin may instead complete a pending profile
+directly in the sheet by supplying name, a valid phone, and zone; it then becomes
+eligible even if the status cell is left as `PENDING`.
+
 `Members.zone` stores the chosen `Zones.zoneName`, not `zoneId`. Names within a
 church should be unique. `driverAskChannelId` remains part of the base Church
 configuration; the MVP asks drivers privately by DM instead of posting in that channel.
@@ -86,7 +96,7 @@ contents, save, and set the Apps Script project's timezone to the pilot churches
 shared local timezone. The script needs the six tabs and exact headers from the
 setup instructions; `npm run setup:sheets` appends `Assignments.unassignedReason`.
 
-To test it manually, seed two church IDs with separate `Zones`, `Members`,
+To test it manually, seed two church IDs with shared `Zones`, separate `Members`,
 available `Drivers`, and `PENDING` `RideRequests`. Set each request's `weekDate`
 to the upcoming Sunday (`YYYY-MM-DD`) in that church's timezone. In the Apps Script
 editor select `runSaturdayAssignments` and click **Run**; grant the Sheet and lock

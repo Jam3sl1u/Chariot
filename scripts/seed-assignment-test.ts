@@ -11,7 +11,7 @@ async function main() {
   const db = Sheets.connect(config.sheetId, config.keyPath);
   const week = weekDate({ timezone: 'America/Los_Angeles' }, DateTime.utc());
   const tables = await Promise.all((['Churches', 'Members', 'Drivers', 'Zones', 'RideRequests', 'Assignments'] as Tab[]).map(async tab => [tab, await db.read(tab)] as const));
-  const existing = tables.flatMap(([, table]) => table.rows).filter(row => row.churchId === churchA || row.churchId === churchB);
+  const existing = tables.filter(([tab]) => tab !== 'Zones').flatMap(([, table]) => table.rows).filter(row => row.churchId === churchA || row.churchId === churchB);
   if (existing.length) throw new Error('TEST-A or TEST-B rows already exist. Refusing to create duplicate test data.');
 
   const rows: Record<Tab, Row[]> = {
@@ -31,9 +31,8 @@ async function main() {
       driver(churchB, 'b-driver', 'B Driver', '10', 'Near'),
     ],
     Zones: [
-      zone(churchA, 'a-near-zone', 'Near', '1'),
-      zone(churchA, 'a-far-zone', 'Far', '2'),
-      zone(churchB, 'b-near-zone', 'Near', '1'),
+      zone('test-near-zone', 'Near', '1'),
+      zone('test-far-zone', 'Far', '2'),
     ],
     RideRequests: [
       request(churchA, 'a-request-near-1', 'a-near-1', week),
@@ -57,8 +56,8 @@ function member(churchId: string, memberId: string, name: string, zone: string):
 function driver(churchId: string, driverId: string, name: string, seatsAvailable: string, homeZone: string): Row {
   return { churchId, driverId, memberId: '', name, discordId: `test-${driverId}`, seatsAvailable, homeZone, isAvailableThisWeek: 'true', isActive: 'true', availabilityWeek: '', askedWeek: '', askMessageId: '', respondedWeek: '' };
 }
-function zone(churchId: string, zoneId: string, zoneName: string, zonePriorityOrder: string): Row {
-  return { churchId, zoneId, zoneName, zonePriorityOrder };
+function zone(zoneId: string, zoneName: string, zonePriorityOrder: string): Row {
+  return { zoneId, zoneName, zonePriorityOrder };
 }
 function request(churchId: string, requestId: string, memberId: string, weekDate: string): Row {
   return { churchId, requestId, weekDate, memberId, status: 'PENDING', hasPlusOne: 'false', plusOneName: '', plusOnePhone: '', plusOnePromptId: '' };

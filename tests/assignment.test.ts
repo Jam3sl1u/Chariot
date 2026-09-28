@@ -8,8 +8,8 @@ import {
 } from '../src/assignment.js';
 
 const zones: AssignmentZone[] = [
-  { zoneId: 'near', churchId: 'church-a', zoneName: 'Near', zonePriorityOrder: 1 },
-  { zoneId: 'far', churchId: 'church-a', zoneName: 'Far', zonePriorityOrder: 2 },
+  { zoneId: 'near', zoneName: 'Near', zonePriorityOrder: 1 },
+  { zoneId: 'far', zoneName: 'Far', zonePriorityOrder: 2 },
 ];
 
 const rider = (requestId: string, zone = 'Near', overrides: Partial<AssignmentRider> = {}): AssignmentRider => ({
@@ -81,7 +81,7 @@ test('mixed input rows never cross church boundaries', () => {
     churchId: 'church-a',
     zones: [
       ...zones,
-      { zoneId: 'other-zone', churchId: 'church-b', zoneName: 'Other', zonePriorityOrder: 0 },
+      { zoneId: 'other-zone', zoneName: 'Other', zonePriorityOrder: 0 },
     ],
     riders: [
       rider('a-rider'),

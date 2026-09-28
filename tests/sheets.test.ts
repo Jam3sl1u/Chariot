@@ -31,3 +31,8 @@ test('Sheets rejects missing tenant and missing headers before issuing any mutat
   await assert.rejects(f.db.save('Members', { churchId: 'a', phone: '+12025550123' }), /setup:sheets/);
   assert.equal(f.calls.length, 0);
 });
+test('Zones is the one shared table and does not require churchId', async () => {
+  const f = fake(['zoneId', 'zoneName', 'zonePriorityOrder']);
+  await f.db.save('Zones', { zoneId: 'mesa', zoneName: 'Mesa Court', zonePriorityOrder: '1' });
+  assert.deepEqual(f.calls[0].requestBody, { values: [['mesa', 'Mesa Court', '1']] });
+});

@@ -211,8 +211,8 @@ export class Bot {
       await this.service.runMessage(message.guildId, message.id, async church => {
         if (message.channelId !== church.weeklyPostChannelId) return;
         if (added && !await this.service.member(church, user.id)) {
+          await this.service.beginRegistration(church, user.id);
           await this.startSurvey(church, user.id);
-          return;
         }
         await this.service.reaction(church, user.id, message.id, added);
       });
@@ -283,7 +283,13 @@ export class Bot {
     const members = await this.service.rows('Members', church);
     const requests = await this.service.rows('RideRequests', church);
     for (const userId of reactors) {
-      try { await this.service.reaction(church, userId, message.id, true); }
+      try {
+        if (!await this.service.member(church, userId)) {
+          await this.service.beginRegistration(church, userId);
+          await this.startSurvey(church, userId);
+        }
+        await this.service.reaction(church, userId, message.id, true);
+      }
       catch (error) { if (!(error instanceof InputError)) throw error; try { await this.dm(userId, error.message); } catch { this.report('Reconciliation DM', error); } }
     }
     for (const ride of requests.filter(r => r.weekDate === week)) {

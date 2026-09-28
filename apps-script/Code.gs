@@ -148,11 +148,11 @@ function runAssignmentsAt_(now, churchIds) {
   }
 }
 
-/** Pure planner ported from src/assignment.ts; it defensively ignores other churches. */
+/** Pure planner ported from src/assignment.ts; riders/drivers stay church-scoped and zones are shared. */
 function assignByZone_(input) {
   var churchId = input.churchId;
   var priority = {};
-  input.zones.filter(function (zone) { return zone.churchId === churchId; }).forEach(function (zone) {
+  input.zones.forEach(function (zone) {
     priority[zone.zoneName] = Number(zone.zonePriorityOrder);
   });
   function zoneOrder(zone) {
@@ -235,7 +235,7 @@ function assignChurch_(churchId, weekDate, tables) {
     churchId: churchId,
     riders: candidates,
     drivers: reducedDrivers,
-    zones: tables.Zones.rows.filter(function (zone) { return zone.churchId === churchId; }),
+    zones: tables.Zones.rows,
   }).map(function (assignment) {
     if (assignment.driverId) assignment.seatPosition += riderCountByDriver[assignment.driverId] || 0;
     return assignment;
@@ -265,7 +265,7 @@ function readTable_(sheet, name) {
   if (!sheet) throw new Error('Missing required sheet tab: ' + name + '.');
   var values = sheet.getDataRange().getValues();
   var headers = values.shift().map(String);
-  if (!headers.length || new Set(headers).size !== headers.length || headers.indexOf('churchId') === -1) throw new Error('Invalid headers in ' + name + '.');
+  if (!headers.length || new Set(headers).size !== headers.length || (name === 'Zones' ? headers.indexOf('zoneId') === -1 : headers.indexOf('churchId') === -1)) throw new Error('Invalid headers in ' + name + '.');
   return { sheet: sheet, headers: headers, rows: values.map(function (cells, index) {
     var row = { __sheetRow: index + 2 };
     headers.forEach(function (header, column) { row[header] = cells[column]; });
@@ -369,7 +369,7 @@ function runAssignmentE2eTests() {
 function seedE2e_(tables, ids, week) {
   var a = ids[0], b = ids[1], c = ids[2];
   [a, b, c].forEach(function (id) { appendE2e_(tables.Churches, { churchId: id, churchName: id, timezone: 'America/Los_Angeles', discordGuildId: 'e2e', weeklyPostChannelId: 'e2e', driverAskChannelId: 'e2e' }); });
-  [a, b, c].forEach(function (id) { appendE2e_(tables.Zones, { churchId: id, zoneId: id + '-zone', zoneName: 'Near', zonePriorityOrder: 1 }); });
+  appendE2e_(tables.Zones, { zoneId: 'e2e-zone-' + a, zoneName: 'Near', zonePriorityOrder: 1 });
   ['a-1', 'a-2', 'a-3'].forEach(function (id) { addE2eRider_(tables, a, id, week, id === 'a-2'); });
   addE2eRider_(tables, b, 'b-1', week, false); addE2eRider_(tables, c, 'c-1', week, false);
   appendE2e_(tables.Drivers, { churchId: a, driverId: 'a-driver', name: 'A', homeZone: 'Near', seatsAvailable: 3, isAvailableThisWeek: true, isActive: true });
@@ -384,5 +384,5 @@ function appendE2e_(table, row) { table.sheet.getRange(table.sheet.getLastRow() 
 function e2eAssignments_(spreadsheet, ids, week) { return readTable_(spreadsheet.getSheetByName('Assignments'), 'Assignments').rows.filter(function (row) { return ids.indexOf(String(row.churchId)) !== -1 && sameWeek_(row.weekDate, week); }); }
 function e2eRow_(rows, memberId) { var row = rows.filter(function (candidate) { return candidate.memberId === memberId; })[0]; assertE2e_(!!row, 'missing row for ' + memberId); return row; }
 function setE2eRequest_(spreadsheet, churchId, memberId, status) { var table = readTable_(spreadsheet.getSheetByName('RideRequests'), 'RideRequests'); var row = table.rows.filter(function (candidate) { return candidate.churchId === churchId && candidate.memberId === memberId; })[0]; assertE2e_(!!row, 'missing request'); table.sheet.getRange(row.__sheetRow, table.headers.indexOf('status') + 1).setValue(status); }
-function deleteE2e_(spreadsheet, ids) { ASSIGNMENT_TABS.forEach(function (tab) { var table = readTable_(spreadsheet.getSheetByName(tab), tab); table.rows.filter(function (row) { return ids.indexOf(String(row.churchId)) !== -1; }).sort(function (a, b) { return b.__sheetRow - a.__sheetRow; }).forEach(function (row) { table.sheet.deleteRow(row.__sheetRow); }); }); }
+function deleteE2e_(spreadsheet, ids) { ASSIGNMENT_TABS.forEach(function (tab) { var table = readTable_(spreadsheet.getSheetByName(tab), tab); table.rows.filter(function (row) { return tab === 'Zones' ? String(row.zoneId).indexOf('e2e-zone-') === 0 : ids.indexOf(String(row.churchId)) !== -1; }).sort(function (a, b) { return b.__sheetRow - a.__sheetRow; }).forEach(function (row) { table.sheet.deleteRow(row.__sheetRow); }); }); }
 function assertE2e_(condition, message) { if (!condition) throw new Error('E2E failed: ' + message); }

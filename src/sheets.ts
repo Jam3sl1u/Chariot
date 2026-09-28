@@ -4,9 +4,9 @@ import { sheets, auth, type sheets_v4 } from 'googleapis/build/src/apis/sheets/i
 export type Row = Record<string, string>;
 export const columns = {
   Churches: ['churchId', 'churchName', 'discordGuildId', 'weeklyPostChannelId', 'driverAskChannelId', 'timezone', 'weeklySendDay', 'weeklySendTime', 'weeklyMessageTemplate', 'registrationDmTemplate', 'activeMessageId', 'activeWeekDate', 'availabilityResetWeek', 'assignmentCompletedWeek'],
-  Members: ['memberId', 'churchId', 'name', 'discordId', 'zone', 'createdAt', 'phone', 'preferences', 'notificationPreference'],
+  Members: ['memberId', 'churchId', 'name', 'discordId', 'zone', 'createdAt', 'phone', 'preferences', 'notificationPreference', 'profileStatus'],
   Drivers: ['driverId', 'churchId', 'memberId', 'name', 'discordId', 'seatsAvailable', 'homeZone', 'isAvailableThisWeek', 'isActive', 'availabilityWeek', 'askedWeek', 'askMessageId', 'respondedWeek'],
-  Zones: ['zoneId', 'churchId', 'zoneName', 'zonePriorityOrder'],
+  Zones: ['zoneId', 'zoneName', 'zonePriorityOrder'],
   RideRequests: ['requestId', 'churchId', 'weekDate', 'memberId', 'status', 'hasPlusOne', 'plusOneName', 'plusOnePhone', 'plusOnePromptId'],
   Assignments: ['weekDate', 'churchId', 'driverId', 'memberId', 'seatPosition', 'notified', 'unassignedReason', 'assignmentStatus'],
 } as const;
@@ -39,7 +39,7 @@ export class Sheets implements Storage {
     const result = await this.api.spreadsheets.values.get({ spreadsheetId: this.sheetId, range: `'${tab}'!A:AZ`, valueRenderOption: 'UNFORMATTED_VALUE' });
     const [first = [], ...values] = result.data.values ?? [];
     const headers = first.map(String);
-    if (new Set(headers).size !== headers.length || !headers.includes('churchId')) throw new Error(`Invalid ${tab} headers`);
+    if (new Set(headers).size !== headers.length || (tab === 'Zones' ? !headers.includes('zoneId') : !headers.includes('churchId'))) throw new Error(`Invalid ${tab} headers`);
     return { headers, rows: values.map(cells => Object.fromEntries(headers.map((name, i) => [name, String(cells[i] ?? '')]))) };
   }
 
@@ -53,7 +53,7 @@ export class Sheets implements Storage {
   }
 
   async save(tab: Tab, row: Row, index?: number) {
-    if (!row.churchId) throw new Error('Every write requires churchId');
+    if (tab !== 'Zones' && !row.churchId) throw new Error('Every write requires churchId');
     const { headers } = await this.read(tab);
     for (const name of Object.keys(row)) if (!headers.includes(name)) throw new Error(`Missing ${tab}.${name}; run setup:sheets`);
     if (index === undefined) {

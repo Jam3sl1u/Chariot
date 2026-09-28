@@ -57,7 +57,10 @@ export class Service {
   runChurch<T>(churchId: string, work: (church: Row) => Promise<T>): Promise<T | undefined> {
     return this.queue(() => this.resolveChurch(churchId), work);
   }
-  async rows(tab: Tab, church: Row) { return (await this.db.read(tab)).rows.filter(r => r.churchId === church.churchId); }
+  async rows(tab: Tab, church: Row) {
+    const rows = (await this.db.read(tab)).rows;
+    return tab === 'Zones' ? rows : rows.filter(r => r.churchId === church.churchId);
+  }
   async patch(tab: Tab, church: Row, key: Row, values: Row) {
     // Resolve again immediately before any write; never trust client-supplied church IDs.
     const current = await this.resolveChurch(church.churchId);
@@ -73,20 +76,42 @@ export class Service {
     if (matches.length > 1) throw new InputError('Duplicate member rows; contact an admin.');
     return matches[0];
   }
+  private complete(member: Row | undefined) {
+    // Legacy rows predate profileStatus. A pending row may also be completed by an
+    // admin directly in Sheets, without requiring them to know an internal label.
+    return !!member && (member.profileStatus !== 'PENDING' || (!!member.name?.trim() && validPhone(member.phone) && !!member.zone?.trim()));
+  }
   async member(church: Row, discordId: string) {
-    return (await this.localMember(church, discordId)) || (await this.db.read('Members')).rows.find(row => row.discordId === discordId);
+    const local = await this.localMember(church, discordId);
+    if (this.complete(local)) return local;
+    return (await this.db.read('Members')).rows.find(row => row.discordId === discordId && this.complete(row));
+  }
+  /** Records an unregistered reactor without making them eligible for a ride. */
+  async beginRegistration(church: Row, discordId: string) {
+    const existing = (await this.db.read('Members')).rows.find(row => row.discordId === discordId);
+    if (existing) return existing;
+    await this.patch('Members', church, { discordId }, {
+      memberId: randomUUID(), createdAt: this.now().toISO()!, profileStatus: 'PENDING',
+      name: '', phone: '', preferences: '', zone: '', notificationPreference: '',
+    });
+    return this.localMember(church, discordId);
   }
   async register(church: Row, discordId: string, data: Row) {
-    const existing = await this.member(church, discordId);
-    if (existing) return existing;
     if (!data.name?.trim() || !validPhone(data.phone)) throw new InputError('Enter your name and a US phone number such as +12025550123.');
     const zones = await this.rows('Zones', church);
     if (data.zone !== 'Other / Not Listed' && !zones.some(z => z.zoneName === data.zone)) throw new InputError('That pickup location is no longer available. Run /register again.');
-    await this.patch('Members', church, { discordId }, {
-      memberId: randomUUID(), createdAt: this.now().toISO()!,
+    const allMembers = (await this.db.read('Members')).rows;
+    const completed = allMembers.find(member => member.discordId === discordId && this.complete(member));
+    if (completed) return completed;
+    const pending = allMembers.find(member => member.discordId === discordId && member.profileStatus === 'PENDING');
+    const profileChurch = pending ? await this.resolveChurch(pending.churchId) : church;
+    if (!profileChurch) throw new InputError('The temporary profile was removed. React to the weekly post again to start over.');
+    await this.patch('Members', profileChurch, { discordId }, {
+      memberId: pending?.memberId || randomUUID(), createdAt: pending?.createdAt || this.now().toISO()!,
       name: data.name.trim(), phone: data.phone, preferences: data.preferences ?? '', zone: data.zone, notificationPreference: 'DISCORD_DM',
+      profileStatus: 'COMPLETE',
     });
-    return this.localMember(church, discordId);
+    return this.localMember(profileChurch, discordId);
   }
   async request(church: Row, discordId: string, week: string) {
     let member = await this.localMember(church, discordId);

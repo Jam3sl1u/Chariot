@@ -39,11 +39,21 @@ test('one registration is reused when the member requests a ride from another ch
   assert.equal(f.db.data.RideRequests[0].churchId, 'b');
   assert.ok(f.db.writes.every(w => w.row.churchId));
 });
-test('registration rejects another church’s zone and invalid phone without writes', async () => {
+test('registration accepts shared zones and rejects invalid locations or phone numbers without writes', async () => {
   const f = fixture();
-  await assert.rejects(f.service.run('guild-a', c => f.service.register(c, 'person', { name: 'Name', phone: '+12025550123', zone: 'Zone b' })), /location/);
-  await assert.rejects(f.service.run('guild-a', c => f.service.register(c, 'person', { name: 'Name', phone: '2025550123', zone: 'Zone a' })), /US phone/);
-  assert.equal(f.db.writes.length, 0);
+  await f.service.run('guild-a', c => f.service.register(c, 'person', { name: 'Name', phone: '+12025550123', zone: 'Zone b' }));
+  assert.equal(f.db.data.Members[0].zone, 'Zone b');
+  const f2 = fixture();
+  await assert.rejects(f2.service.run('guild-a', c => f2.service.register(c, 'person', { name: 'Name', phone: '+12025550123', zone: 'Unknown' })), /location/);
+  await assert.rejects(f2.service.run('guild-a', c => f2.service.register(c, 'person', { name: 'Name', phone: '2025550123', zone: 'Zone a' })), /US phone/);
+  assert.equal(f2.db.writes.length, 0);
+});
+test('a pending profile completed manually in the Sheet becomes eligible for a ride', async () => {
+  const f = fixture();
+  f.db.data.Members.push({ memberId: 'pending-member', churchId: 'a', discordId: 'person', profileStatus: 'PENDING', name: 'Manual Member', phone: '+12025550123', zone: 'Zone a', createdAt: '', preferences: '', notificationPreference: '' });
+  await f.service.run('guild-a', c => f.service.reaction(c, 'person', 'post-a', true));
+  assert.equal(f.db.data.RideRequests.length, 1);
+  assert.equal(f.db.data.RideRequests[0].memberId, 'pending-member');
 });
 test('any reaction creates one ride request; removal and re-add reuse it', async () => {
   const f = fixture(); await register(f); await register(f, 'guild-b');

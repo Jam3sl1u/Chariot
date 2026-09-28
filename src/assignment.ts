@@ -18,7 +18,6 @@ export interface AssignmentDriver {
 
 export interface AssignmentZone {
   zoneId: string;
-  churchId: string;
   zoneName: string;
   zonePriorityOrder: number;
 }
@@ -53,7 +52,6 @@ const UNASSIGNED_CAPACITY = 'No available driver seats in this church.';
 export function assignByZone({ churchId, riders, drivers, zones }: AssignmentInput): Assignment[] {
   const priority = new Map(
     zones
-      .filter(zone => zone.churchId === churchId)
       .map(zone => [zone.zoneName, zone.zonePriorityOrder]),
   );
   const zoneOrder = (zone: string) => priority.get(zone) ?? Number.POSITIVE_INFINITY;
