@@ -103,3 +103,32 @@ test('mixed input rows never cross church boundaries', () => {
   }]);
   assert.ok(result.every(row => row.churchId === 'church-a' && row.driverId !== 'b-driver'));
 });
+
+test('a driver takes a rider from the same housing unit before a higher-priority distant rider', () => {
+  const result = assignByZone({
+    churchId: 'church-a', zones: [
+      { zoneId: 'near', zoneName: 'Near', zonePriorityOrder: 1 },
+      { zoneId: 'home', zoneName: 'Home', zonePriorityOrder: 9 },
+    ],
+    drivers: [driver('home-driver', 1, { homeZone: 'Home' })],
+    riders: [rider('near-rider', 'Near'), rider('home-rider', 'Home')],
+    distanceFeet: (from, to) => from === to ? 0 : 100,
+  });
+  assert.equal(result.find(row => row.memberId === 'member-home-rider')?.driverId, 'home-driver');
+  assert.match(result.find(row => row.memberId === 'member-near-rider')?.unassignedReason ?? '', /No available/);
+});
+
+test('shorter seeded distance wins before zone priority when no same-housing match exists', () => {
+  const result = assignByZone({
+    churchId: 'church-a', zones: [
+      { zoneId: 'home', zoneName: 'Home', zonePriorityOrder: 9 },
+      { zoneId: 'close', zoneName: 'Close', zonePriorityOrder: 8 },
+      { zoneId: 'far', zoneName: 'Far', zonePriorityOrder: 1 },
+    ],
+    drivers: [driver('driver', 1, { homeZone: 'Home' })],
+    riders: [rider('close-rider', 'Close'), rider('far-rider', 'Far')],
+    distanceFeet: (from, to) => ({ 'Home|Close': 100, 'Home|Far': 1_000 } as Record<string, number>)[`${from}|${to}`],
+  });
+  assert.equal(result.find(row => row.memberId === 'member-close-rider')?.driverId, 'driver');
+  assert.match(result.find(row => row.memberId === 'member-far-rider')?.unassignedReason ?? '', /No available/);
+});

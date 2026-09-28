@@ -3,7 +3,7 @@
  * It uses the active spreadsheet, so it needs no spreadsheet ID or credentials.
  */
 
-var ASSIGNMENT_TABS = ['Churches', 'Members', 'Drivers', 'Zones', 'RideRequests', 'Assignments'];
+var ASSIGNMENT_TABS = ['Churches', 'Members', 'Drivers', 'Zones', 'ZoneDistances', 'RideRequests', 'Assignments'];
 var UNASSIGNED_CAPACITY = 'No available driver seats in this church.';
 var ASSIGNMENT_BUTTON_TITLE = 'chariot-run-assignments-button';
 var RESET_ASSIGNMENTS_BUTTON_TITLE = 'chariot-reset-assignments-button';
@@ -148,7 +148,7 @@ function runAssignmentsAt_(now, churchIds) {
   }
 }
 
-/** Pure planner ported from src/assignment.ts; riders/drivers stay church-scoped and zones are shared. */
+/** Pure proximity planner: same housing first, then cached seed distance, then zone priority. */
 function assignByZone_(input) {
   var churchId = input.churchId;
   var priority = {};
@@ -158,31 +158,58 @@ function assignByZone_(input) {
   function zoneOrder(zone) {
     return Object.prototype.hasOwnProperty.call(priority, zone) ? priority[zone] : Infinity;
   }
+  var knownZones = {};
+  input.zones.forEach(function (zone) { knownZones[zone.zoneName] = true; });
+  var distances = {};
+  input.distances.forEach(function (pair) {
+    distances[pair.locationA + '\u0000' + pair.locationB] = Number(pair.distanceFeet);
+    distances[pair.locationB + '\u0000' + pair.locationA] = Number(pair.distanceFeet);
+  });
+  var coordinates = {};
+  input.zones.forEach(function (zone) { if (zone.latitude !== '' && zone.longitude !== '') coordinates[zone.zoneName] = { latitude: Number(zone.latitude), longitude: Number(zone.longitude) }; });
+  function distance(from, to) {
+    if (from === to) return 0;
+    var cached = distances[from + '\u0000' + to];
+    if (cached !== undefined) return cached;
+    var a = coordinates[from], b = coordinates[to];
+    if (!a || !b) return 1000000000;
+    var radians = Math.PI / 180;
+    var dLat = (b.latitude - a.latitude) * radians, dLng = (b.longitude - a.longitude) * radians;
+    var h = Math.pow(Math.sin(dLat / 2), 2) + Math.cos(a.latitude * radians) * Math.cos(b.latitude * radians) * Math.pow(Math.sin(dLng / 2), 2);
+    return 20925524.9 * Math.asin(Math.sqrt(h));
+  }
   var eligibleDrivers = input.drivers
     .filter(function (driver) {
       return driver.churchId === churchId && isTrue_(driver.isAvailableThisWeek) && Number(driver.seatsAvailable) > 0;
     })
     .map(function (driver) {
-      return { driverId: driver.driverId, homeZone: driver.homeZone, remaining: Math.floor(Number(driver.seatsAvailable)), riderCount: 0 };
-    })
-    .sort(function (a, b) { return zoneOrder(a.homeZone) - zoneOrder(b.homeZone) || a.driverId.localeCompare(b.driverId); });
+      return { driverId: driver.driverId, homeZone: driver.homeZone, lastZone: driver.homeZone, remaining: Math.floor(Number(driver.seatsAvailable)), riderCount: 0 };
+    });
   var eligibleRiders = input.riders
     .filter(function (rider) { return rider.churchId === churchId && rider.status === 'PENDING'; })
-    .slice()
-    .sort(function (a, b) { return zoneOrder(a.zone) - zoneOrder(b.zone) || a.requestId.localeCompare(b.requestId); });
-
-  return eligibleRiders.map(function (rider) {
-    var seatsUsed = isTrue_(rider.hasPlusOne) ? 2 : 1;
-    var driver = eligibleDrivers.find(function (candidate) { return candidate.remaining >= seatsUsed; });
-    if (!driver) {
-      return { churchId: churchId, driverId: '', memberId: rider.memberId, requestId: rider.requestId,
-        seatPosition: '', seatsUsed: seatsUsed, unassignedReason: UNASSIGNED_CAPACITY };
-    }
-    driver.remaining -= seatsUsed;
-    driver.riderCount += 1;
-    return { churchId: churchId, driverId: driver.driverId, memberId: rider.memberId, requestId: rider.requestId,
-      seatPosition: driver.riderCount, seatsUsed: seatsUsed };
+    .slice();
+  var assignments = [];
+  var remaining = eligibleRiders.filter(function (rider) {
+    if (rider.zone && rider.zone !== 'Other / Not Listed' && knownZones[rider.zone]) return true;
+    assignments.push({ churchId: churchId, driverId: '', memberId: rider.memberId, requestId: rider.requestId, seatPosition: '', seatsUsed: isTrue_(rider.hasPlusOne) ? 2 : 1, unassignedReason: 'Pickup location needs completion or manual placement.' });
+    return false;
   });
+  while (remaining.length) {
+    var candidates = [];
+    remaining.forEach(function (rider, riderIndex) { eligibleDrivers.forEach(function (driver) {
+      if (driver.remaining >= (isTrue_(rider.hasPlusOne) ? 2 : 1)) candidates.push({ rider: rider, riderIndex: riderIndex, driver: driver, sameHousing: driver.homeZone === rider.zone, distance: distance(driver.lastZone, rider.zone) });
+    }); });
+    if (!candidates.length) {
+      remaining.forEach(function (rider) { assignments.push({ churchId: churchId, driverId: '', memberId: rider.memberId, requestId: rider.requestId, seatPosition: '', seatsUsed: isTrue_(rider.hasPlusOne) ? 2 : 1, unassignedReason: UNASSIGNED_CAPACITY }); });
+      break;
+    }
+    candidates.sort(function (a, b) { return Number(b.sameHousing) - Number(a.sameHousing) || a.distance - b.distance || zoneOrder(a.rider.zone) - zoneOrder(b.rider.zone) || a.rider.requestId.localeCompare(b.rider.requestId) || a.driver.driverId.localeCompare(b.driver.driverId); });
+    var best = candidates[0], seatsUsed = isTrue_(best.rider.hasPlusOne) ? 2 : 1;
+    best.driver.remaining -= seatsUsed; best.driver.riderCount += 1; best.driver.lastZone = best.rider.zone;
+    assignments.push({ churchId: churchId, driverId: best.driver.driverId, memberId: best.rider.memberId, requestId: best.rider.requestId, seatPosition: best.driver.riderCount, seatsUsed: seatsUsed });
+    remaining.splice(best.riderIndex, 1);
+  }
+  return assignments;
 }
 
 function assignChurch_(churchId, weekDate, tables) {
@@ -236,6 +263,7 @@ function assignChurch_(churchId, weekDate, tables) {
     riders: candidates,
     drivers: reducedDrivers,
     zones: tables.Zones.rows,
+    distances: tables.ZoneDistances.rows,
   }).map(function (assignment) {
     if (assignment.driverId) assignment.seatPosition += riderCountByDriver[assignment.driverId] || 0;
     return assignment;
@@ -265,7 +293,7 @@ function readTable_(sheet, name) {
   if (!sheet) throw new Error('Missing required sheet tab: ' + name + '.');
   var values = sheet.getDataRange().getValues();
   var headers = values.shift().map(String);
-  if (!headers.length || new Set(headers).size !== headers.length || (name === 'Zones' ? headers.indexOf('zoneId') === -1 : headers.indexOf('churchId') === -1)) throw new Error('Invalid headers in ' + name + '.');
+  if (!headers.length || new Set(headers).size !== headers.length || ((name === 'Zones' || name === 'ZoneDistances') ? headers.indexOf(name === 'Zones' ? 'zoneId' : 'locationA') === -1 : headers.indexOf('churchId') === -1)) throw new Error('Invalid headers in ' + name + '.');
   return { sheet: sheet, headers: headers, rows: values.map(function (cells, index) {
     var row = { __sheetRow: index + 2 };
     headers.forEach(function (header, column) { row[header] = cells[column]; });
@@ -384,5 +412,5 @@ function appendE2e_(table, row) { table.sheet.getRange(table.sheet.getLastRow() 
 function e2eAssignments_(spreadsheet, ids, week) { return readTable_(spreadsheet.getSheetByName('Assignments'), 'Assignments').rows.filter(function (row) { return ids.indexOf(String(row.churchId)) !== -1 && sameWeek_(row.weekDate, week); }); }
 function e2eRow_(rows, memberId) { var row = rows.filter(function (candidate) { return candidate.memberId === memberId; })[0]; assertE2e_(!!row, 'missing row for ' + memberId); return row; }
 function setE2eRequest_(spreadsheet, churchId, memberId, status) { var table = readTable_(spreadsheet.getSheetByName('RideRequests'), 'RideRequests'); var row = table.rows.filter(function (candidate) { return candidate.churchId === churchId && candidate.memberId === memberId; })[0]; assertE2e_(!!row, 'missing request'); table.sheet.getRange(row.__sheetRow, table.headers.indexOf('status') + 1).setValue(status); }
-function deleteE2e_(spreadsheet, ids) { ASSIGNMENT_TABS.forEach(function (tab) { var table = readTable_(spreadsheet.getSheetByName(tab), tab); table.rows.filter(function (row) { return tab === 'Zones' ? String(row.zoneId).indexOf('e2e-zone-') === 0 : ids.indexOf(String(row.churchId)) !== -1; }).sort(function (a, b) { return b.__sheetRow - a.__sheetRow; }).forEach(function (row) { table.sheet.deleteRow(row.__sheetRow); }); }); }
+function deleteE2e_(spreadsheet, ids) { ASSIGNMENT_TABS.forEach(function (tab) { var table = readTable_(spreadsheet.getSheetByName(tab), tab); table.rows.filter(function (row) { return tab === 'Zones' ? String(row.zoneId).indexOf('e2e-zone-') === 0 : tab === 'ZoneDistances' ? false : ids.indexOf(String(row.churchId)) !== -1; }).sort(function (a, b) { return b.__sheetRow - a.__sheetRow; }).forEach(function (row) { table.sheet.deleteRow(row.__sheetRow); }); }); }
 function assertE2e_(condition, message) { if (!condition) throw new Error('E2E failed: ' + message); }

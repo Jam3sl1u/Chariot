@@ -9,6 +9,7 @@
     "seed:assignment-test": "tsx --env-file-if-exists=.env scripts/seed-assignment-test.ts",
     "seed:priority-zones": "tsx --env-file-if-exists=.env scripts/seed-priority-zones.ts",
     "migrate:zones-global": "tsx --env-file-if-exists=.env scripts/migrate-zones-global.ts",
+    "seed:routing-data": "tsx --env-file-if-exists=.env scripts/seed-routing-data.ts",
     "verify:assignment-test": "tsx --env-file-if-exists=.env scripts/verify-assignment-test.ts",
     "typecheck:verification": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
