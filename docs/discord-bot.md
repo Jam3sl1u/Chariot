@@ -4,8 +4,8 @@ Implements MVP-000–004 and the Discord portions of BOT-001–030 under PRD §2
 The PRD is at `documentation/prd/Chariot_PRD_v2_3.md`.
 
 The MVP uses Discord DMs, per §29.2–29.4. There is no SMS selector, portal link,
-password setup, standing request, assignment computation, waitlist autofill, or
-assignment-result notification job. Registering updates by `(churchId, discordId)`.
+password setup, standing request, waitlist autofill, or assignment-result notification
+job. Registering updates by `(churchId, discordId)`.
 Pickup choices come from that church's `Zones` rows plus **Other / Not Listed**.
 Admin availability overrides happen by editing the Sheet; `/rides ask-drivers`
 re-sends prompts to nonresponders. Guild channel chat is ignored.
@@ -24,8 +24,8 @@ re-sends prompts to nonresponders. Guild channel chat is ignored.
    sensitive; keep row 1 contiguous. Keep IDs as **Plain text**, especially Discord
    snowflakes (numeric cells can lose precision).
 5. Run `npm run setup:sheets`. This appends the approved supporting headers to the
-   existing tabs, preserving their order and data. It does not create tabs, seed
-   accounts, or read/write `Assignments`. Run it with the bot stopped.
+   existing tabs, preserving their order and data. It does not create tabs or seed
+   accounts. Run it with the bot stopped.
 6. Configure every `Churches` row as described below. Run `npm run verify:sheets`
    to check API access and headers without printing IDs, member data or credentials.
 7. Invite the bot to the shared guild with `bot` and `applications.commands` scopes.
@@ -57,6 +57,7 @@ Existing columns may be reordered; code maps them by header name.
 | RideRequests | `hasPlusOne`, `plusOneName`, `plusOnePhone`, `plusOnePromptId` | Reserved for the deferred +1 feature; the MVP does not read or write them. |
 | Drivers | `isActive` | Admin; blank/TRUE means active, FALSE disables asks/replies. |
 | Drivers | `availabilityWeek`, `askedWeek`, `askMessageId`, `respondedWeek` | Bot; scopes/reset/reply context for each week. |
+| Assignments | `unassignedReason`, `assignmentStatus` | Assignment script. Status is `ASSIGNED`, `UNASSIGNED`, or `CANCELLED`; cancelled rows remain as history but do not occupy a seat. |
 
 `Churches.churchId` must be unique. Every church row uses the same `discordGuildId` and
 `weeklyPostChannelId`; reactions are routed only by the weekly post's saved
@@ -76,6 +77,38 @@ configuration; the MVP asks drivers privately by DM instead of posting in that c
 
 Boolean cells are written as actual Sheets booleans. User text is written with
 `RAW` input mode so names/preferences beginning with `=` cannot become formulas.
+
+## Saturday assignment Apps Script
+
+The standalone script is [apps-script/Code.gs](../apps-script/Code.gs). In the
+Sheet, choose **Extensions → Apps Script**, replace the default file with its
+contents, save, and set the Apps Script project's timezone to the pilot churches'
+shared local timezone. The script needs the six tabs and exact headers from the
+setup instructions; `npm run setup:sheets` appends `Assignments.unassignedReason`.
+
+To test it manually, seed two church IDs with separate `Zones`, `Members`,
+available `Drivers`, and `PENDING` `RideRequests`. Set each request's `weekDate`
+to the upcoming Sunday (`YYYY-MM-DD`) in that church's timezone. In the Apps Script
+editor select `runSaturdayAssignments` and click **Run**; grant the Sheet and lock
+permissions when prompted. The execution log reports each church and row count.
+In `Assignments`, each pending rider gets one row for that church/week: seated
+riders have a `driverId`, while overflow riders have a blank `driverId` and an
+`unassignedReason`. Re-running preserves seated riders, frees a cancelled rider's
+seat while retaining their `assignmentStatus = CANCELLED` history row, and tries
+only newly pending or still-unassigned riders.
+
+After the manual check, select `createSaturdayAssignmentTrigger` and click **Run**
+once. It installs one Saturday trigger at approximately 11:45 AM in the project
+timezone; Apps Script time triggers are approximate. Do not run it against live
+data until the seeded two-church output is correct.
+
+To add on-sheet controls, select `buildAllButtons` in Apps Script and click **Run**
+once. It creates a `Buttons` tab containing **Run Assignments** and **Reset
+Assignments**. The first preserves seated riders and fills only new/unassigned riders.
+The reset button asks for confirmation, then deletes only each church's Assignment rows
+for the current upcoming service Sunday; requests and every other week's rows remain.
+Run `removeAssignmentButton` or `removeResetAssignmentsButton` from the Apps Script
+function dropdown to remove either control without changing rows.
 
 ## Timing, replies and recovery
 

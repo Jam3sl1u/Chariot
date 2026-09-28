@@ -8,6 +8,7 @@ export const columns = {
   Drivers: ['driverId', 'churchId', 'memberId', 'name', 'discordId', 'seatsAvailable', 'homeZone', 'isAvailableThisWeek', 'isActive', 'availabilityWeek', 'askedWeek', 'askMessageId', 'respondedWeek'],
   Zones: ['zoneId', 'churchId', 'zoneName', 'zonePriorityOrder'],
   RideRequests: ['requestId', 'churchId', 'weekDate', 'memberId', 'status', 'hasPlusOne', 'plusOneName', 'plusOnePhone', 'plusOnePromptId'],
+  Assignments: ['weekDate', 'churchId', 'driverId', 'memberId', 'seatPosition', 'notified', 'unassignedReason', 'assignmentStatus'],
 } as const;
 export type Tab = keyof typeof columns;
 export interface Table { headers: string[]; rows: Row[] }
@@ -22,7 +23,7 @@ function col(index: number): string {
   return value;
 }
 function cell(name: string, value: string): string | boolean {
-  if (['isAvailableThisWeek', 'isActive', 'hasPlusOne'].includes(name) && /^(true|false)$/i.test(value)) return value.toLowerCase() === 'true';
+  if (['isAvailableThisWeek', 'isActive', 'hasPlusOne', 'notified'].includes(name) && /^(true|false)$/i.test(value)) return value.toLowerCase() === 'true';
   return value;
 }
 
