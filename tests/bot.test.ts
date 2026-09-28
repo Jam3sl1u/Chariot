@@ -13,11 +13,14 @@ test('Thursday asks reset stale availability, persist context and do not repeat 
   f.setNow('2026-10-01T12:00:00'); await d.bot.tick();
   assert.equal(d.dms.length, 4); assert.ok(f.db.data.Drivers.every(row => row.availabilityWeek === '2026-10-04'));
 });
-test('startup clears weekly post and availability-reset state, then waits for admin commands', async () => {
+test('startup preserves weekly post and availability-reset state, then waits for admin commands', async () => {
   const f = fixture(); const d = discordFixture(f);
+  for (const church of f.db.data.Churches) church.availabilityResetWeek = '2026-09-27';
   await (d.bot as unknown as { ready: () => Promise<void> }).ready();
   for (const church of f.db.data.Churches) {
-    assert.equal(church.activeMessageId, ''); assert.equal(church.activeWeekDate, ''); assert.equal(church.availabilityResetWeek, '');
+    assert.equal(church.activeMessageId, `post-${church.churchId}`);
+    assert.equal(church.activeWeekDate, '2026-09-27');
+    assert.equal(church.availabilityResetWeek, '2026-09-27');
   }
   assert.equal(d.dms.length, 0);
 });

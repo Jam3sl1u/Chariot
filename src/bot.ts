@@ -80,7 +80,8 @@ export class Bot {
           for (const command of commands) await guild.commands.create(command);
           this.initializedGuilds.add(resolved.discordGuildId);
         }
-        await this.service.patch('Churches', resolved, {}, { activeMessageId: '', activeWeekDate: '', availabilityResetWeek: '' });
+        // Weekly state belongs to the Sheet, not this process. It must survive a
+        // deploy or restart so /rides sync can continue managing the same post.
       }); } catch (error) { this.report(`Startup (${church.churchId})`, error); }
     }
     console.log('Chariot is ready. Manual mode: use /rides commands to post, sync, or ask drivers.');
