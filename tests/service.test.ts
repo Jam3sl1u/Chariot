@@ -25,8 +25,8 @@ test('churches sharing a guild and channel are isolated by active message', asyn
   assert.equal(await f.service.runChannel('guild-a', 'channel-a', () => Promise.resolve(true)), undefined);
   await f.service.runChurch('a', c => f.service.register(c, 'person-a', { name: 'Member A', phone: '+12025550123', zone: 'Zone a' }));
   await f.service.runChurch('b', c => f.service.register(c, 'person-b', { name: 'Member B', phone: '+12025550124', zone: 'Zone b' }));
-  await f.service.runMessage('guild-a', 'post-a', c => f.service.reaction(c, 'person-a', 'post-a', '✅', true));
-  await f.service.runMessage('guild-a', 'post-b', c => f.service.reaction(c, 'person-b', 'post-b', '✅', true));
+  await f.service.runMessage('guild-a', 'post-a', c => f.service.reaction(c, 'person-a', 'post-a', true));
+  await f.service.runMessage('guild-a', 'post-b', c => f.service.reaction(c, 'person-b', 'post-b', true));
   assert.deepEqual(f.db.data.RideRequests.map(r => [r.churchId, r.status]).sort(), [['a', 'PENDING'], ['b', 'PENDING']]);
 });
 test('same Discord member registers independently in two churches, then updates in place', async () => {
@@ -43,44 +43,34 @@ test('registration rejects another church’s zone and invalid phone without wri
   await assert.rejects(f.service.run('guild-a', c => f.service.register(c, 'person', { name: 'Name', phone: '2025550123', zone: 'Zone a' })), /US phone/);
   assert.equal(f.db.writes.length, 0);
 });
-test('concurrent duplicate reactions create one row; removal and re-add reuse it', async () => {
+test('any reaction creates one ride request; removal and re-add reuse it', async () => {
   const f = fixture(); await register(f); await register(f, 'guild-b');
-  await Promise.all(Array.from({ length: 20 }, () => f.service.run('guild-a', c => f.service.reaction(c, 'person', 'post-a', '✅', true))));
+  await Promise.all(Array.from({ length: 20 }, () => f.service.run('guild-a', c => f.service.reaction(c, 'person', 'post-a', true))));
   assert.equal(f.db.data.RideRequests.length, 1); const id = f.db.data.RideRequests[0].requestId;
-  await f.service.run('guild-a', c => f.service.reaction(c, 'person', 'post-a', '✅', false));
+  await f.service.run('guild-a', c => f.service.reaction(c, 'person', 'post-a', false));
   assert.equal(f.db.data.RideRequests[0].status, 'CANCELLED');
-  await f.service.run('guild-a', c => f.service.reaction(c, 'person', 'post-a', '✅', true));
+  await f.service.run('guild-a', c => f.service.reaction(c, 'person', 'post-a', true));
   assert.equal(f.db.data.RideRequests[0].requestId, id); assert.equal(f.db.data.RideRequests[0].status, 'PENDING');
 });
 test('old or unrelated posts do not change requests; unregistered user gets registration guidance', async () => {
   const f = fixture();
-  await f.service.run('guild-a', c => f.service.reaction(c, 'person', 'unrelated', '✅', true));
-  await assert.rejects(f.service.run('guild-a', c => f.service.reaction(c, 'person', 'post-a', '✅', true)), /register/);
+  await f.service.run('guild-a', c => f.service.reaction(c, 'person', 'unrelated', true));
+  await assert.rejects(f.service.run('guild-a', c => f.service.reaction(c, 'person', 'post-a', true)), /register/);
   f.a.activeWeekDate = '2026-09-20';
-  await f.service.run('guild-a', c => f.service.reaction(c, 'person', 'post-a', '✅', true));
+  await f.service.run('guild-a', c => f.service.reaction(c, 'person', 'post-a', true));
   assert.equal(f.db.writes.length, 0);
 });
-test('+1 requires a pending ride, validates phone, updates one guest, and removal clears details', async () => {
+test('a former +1 emoji is an ordinary ride signup', async () => {
   const f = fixture(); await register(f);
-  await assert.rejects(f.service.run('guild-a', c => f.service.reaction(c, 'person', 'post-a', '1️⃣', true)), /own ride/);
-  await f.service.run('guild-a', c => f.service.reaction(c, 'person', 'post-a', '✅', true));
-  const ride = f.db.data.RideRequests[0]; ride.plusOnePromptId = 'prompt';
-  await assert.rejects(f.service.run('guild-a', c => f.service.plusOne(c, 'person', 'prompt', 'Guest\ninvalid')), /two lines/);
-  await f.service.run('guild-a', c => f.service.plusOne(c, 'person', 'prompt', 'Guest Name\n+12025550123'));
-  assert.equal(f.db.data.RideRequests[0].hasPlusOne, 'true'); assert.equal(f.db.data.RideRequests[0].plusOneName, 'Guest Name');
-  f.db.data.RideRequests[0].plusOnePromptId = 'update';
-  await f.service.run('guild-a', c => f.service.plusOne(c, 'person', 'update', 'Updated Guest\n+12025550124'));
-  assert.equal(f.db.data.RideRequests.length, 1); assert.equal(f.db.data.RideRequests[0].plusOneName, 'Updated Guest');
-  await f.service.run('guild-a', c => f.service.reaction(c, 'person', 'post-a', '1️⃣', false));
-  assert.equal(f.db.data.RideRequests[0].hasPlusOne, 'false'); assert.equal(f.db.data.RideRequests[0].plusOnePhone, '');
-  await assert.rejects(f.service.run('guild-a', c => f.service.plusOne(c, 'person', 'update', 'Guest\n+12025550123')), /expired/);
+  await f.service.run('guild-a', c => f.service.reaction(c, 'person', 'post-a', true));
+  assert.equal(f.db.data.RideRequests.length, 1); assert.equal(f.db.data.RideRequests[0].status, 'PENDING');
 });
 test('Saturday 10am is informational; actual completion marker closes additions but not cancellations', async () => {
   const f = fixture(); await register(f); f.setNow('2026-09-26T12:00:00');
-  await f.service.run('guild-a', c => f.service.reaction(c, 'person', 'post-a', '✅', true));
+  await f.service.run('guild-a', c => f.service.reaction(c, 'person', 'post-a', true));
   f.a.assignmentCompletedWeek = '2026-09-27';
-  await f.service.run('guild-a', c => f.service.reaction(c, 'person', 'post-a', '✅', false));
-  await assert.rejects(f.service.run('guild-a', c => f.service.reaction(c, 'person', 'post-a', '✅', true)), /Assignments have run/);
+  await f.service.run('guild-a', c => f.service.reaction(c, 'person', 'post-a', false));
+  await assert.rejects(f.service.run('guild-a', c => f.service.reaction(c, 'person', 'post-a', true)), /Assignments have run/);
   assert.equal(f.db.data.RideRequests[0].status, 'CANCELLED');
 });
 test('strict YES/NO parser and E.164 phone validation', () => {

@@ -7,7 +7,7 @@ import {
 } from 'discord.js';
 import { randomUUID } from 'node:crypto';
 import type { Row } from './sheets.js';
-import { Service, InputError, truth, validPhone } from './service.js';
+import { Service, InputError, validPhone } from './service.js';
 import { localTime, weekDate, weeklyDue } from './time.js';
 
 export const commands = [
@@ -122,7 +122,7 @@ export class Bot {
     if (!i.isChatInputCommand() && !i.isModalSubmit() && !i.isStringSelectMenu() && !i.isButton()) return;
     try {
       if (i.isChatInputCommand() && i.commandName === 'register') {
-        await i.reply({ content: 'React ✅ or 1️⃣ on the weekly post for your church to start its registration survey.', flags: MessageFlags.Ephemeral }); return;
+        await i.reply({ content: 'React to the weekly post for your church to start its registration survey.', flags: MessageFlags.Ephemeral }); return;
       }
       if (i.isButton() && i.customId.startsWith('survey:')) {
         const churchId = i.customId.slice('survey:'.length);
@@ -191,7 +191,7 @@ export class Bot {
           await this.service.register(church, i.user.id, session.data);
           this.registrations.delete(id);
           this.surveys.delete(this.surveyKey(church.churchId, i.user.id));
-          await i.editReply(`Registration saved for ${church.churchName}. React again to this church's weekly post: ✅ requests a ride and 1️⃣ adds one guest.`);
+          await i.editReply(`Registration saved for ${church.churchName}. React again to this church's weekly post to request a ride.`);
         }
       });
       if (!recognized) await i.editReply('This church survey or command is no longer configured. React to the weekly post again.');
@@ -203,7 +203,7 @@ export class Bot {
   }
 
   private async reaction(reaction: MessageReaction | PartialMessageReaction, user: User | PartialUser, added: boolean) {
-    if (user.bot || !['✅', '1️⃣'].includes(reaction.emoji.name ?? '')) return;
+    if (user.bot) return;
     try {
       if (reaction.partial) await reaction.fetch();
       const message = reaction.message.partial ? await reaction.message.fetch() : reaction.message;
@@ -214,44 +214,33 @@ export class Bot {
           await this.startSurvey(church, user.id);
           return;
         }
-        const ride = await this.service.reaction(church, user.id, message.id, reaction.emoji.name!, added);
-        if (ride) await this.promptPlus(church, user.id, ride);
+        await this.service.reaction(church, user.id, message.id, added);
       });
     } catch (error) {
       this.report('Reaction', error);
       try { await this.dm(user.id, error instanceof InputError ? error.message : 'Your ride change could not be saved. Remove/re-add your reaction to retry, or ask an admin to run /rides sync.'); } catch { this.report('Reaction DM delivery', error); }
     }
   }
-  private async promptPlus(church: Row, userId: string, ride: Row) {
-    const message = await this.dm(userId, `[${church.churchName} — ${ride.weekDate}] ${truth(ride.hasPlusOne) ? 'Update your existing +1' : 'Add your +1'}: reply to THIS message with two lines: their full name, then US phone (+12025550123). You may use your own phone. Use Discord’s Reply action to select this church.`);
-    await this.service.patch('RideRequests', church, { requestId: ride.requestId }, { plusOnePromptId: message.id });
-  }
-
   private async message(message: Message) {
     if (message.author.bot || message.guildId) return;
     try {
       // DMs have no guildId: recover it only from a persisted, user-bound outbound prompt.
-      const candidates: { church: Row; type: 'driver' | 'plus'; prompt: string }[] = [];
+      const candidates: { church: Row; prompt: string }[] = [];
       const reference = message.reference?.messageId;
       for (const church of await this.service.churches()) {
         const week = weekDate(church, this.service.now());
         for (const driver of await this.service.rows('Drivers', church)) {
-          if (driver.discordId === message.author.id && driver.askedWeek === week && driver.askMessageId && (reference ? driver.askMessageId === reference : driver.respondedWeek !== week)) candidates.push({ church, type: 'driver', prompt: driver.askMessageId });
-        }
-        const member = await this.service.member(church, message.author.id);
-        if (member) for (const ride of await this.service.rows('RideRequests', church)) {
-          if (ride.memberId === member.memberId && ride.weekDate === week && ride.plusOnePromptId && (!reference || reference === ride.plusOnePromptId)) candidates.push({ church, type: 'plus', prompt: ride.plusOnePromptId });
+          if (driver.discordId === message.author.id && driver.askedWeek === week && driver.askMessageId && (reference ? driver.askMessageId === reference : driver.respondedWeek !== week)) candidates.push({ church, prompt: driver.askMessageId });
         }
       }
       if (candidates.length !== 1) {
-        await message.reply(candidates.length ? 'You have multiple pending prompts. Use Discord’s Reply action on the specific church’s message.' : 'No current prompt matches this reply. Use /register in your church, react 1️⃣ for a guest, or ask an admin to resend the driver ask.'); return;
+        await message.reply(candidates.length ? 'You have multiple pending prompts. Use Discord’s Reply action on the specific church’s message.' : 'No current driver prompt matches this reply. Ask an admin to resend it.'); return;
       }
       const candidate = candidates[0];
       await this.service.runChurch(candidate.church.churchId, async church => {
         if (church.churchId !== candidate.church.churchId) throw new InputError('Church configuration changed. Ask an admin to resend the prompt.');
         await this.isMember(church, message.author.id);
-        if (candidate.type === 'driver') await message.reply(`[${church.churchName}] ${await this.service.driverReply(church, message.author.id, candidate.prompt, message.content)}`);
-        else { await this.service.plusOne(church, message.author.id, candidate.prompt, message.content); await message.reply(`[${church.churchName}] Your +1 is saved.`); }
+        await message.reply(`[${church.churchName}] ${await this.service.driverReply(church, message.author.id, candidate.prompt, message.content)}`);
       });
     } catch (error) {
       this.report('DM reply', error);
@@ -266,8 +255,6 @@ export class Bot {
     const channel = await this.channel(church);
     const message = await channel.send({ content: church.weeklyMessageTemplate, allowedMentions: { parse: [] } });
     await this.service.patch('Churches', church, {}, { activeMessageId: message.id, activeWeekDate: week });
-    await message.react('✅');
-    await message.react('1️⃣');
   }
   async reconcile(church: Row) {
     const week = weekDate(church, this.service.now());
@@ -283,44 +270,27 @@ export class Bot {
       throw error;
     }
     if (message.author.id !== this.client.user?.id) throw new InputError('Active weekly message is not owned by this bot.');
-    const users = async (emoji: string) => {
-      const found = new Set<string>();
-      const reaction = message.reactions.cache.find(r => r.emoji.name === emoji);
-      if (!reaction) return found;
+    const reactors = new Set<string>();
+    for (const reaction of message.reactions.cache.values()) {
       let after: string | undefined;
       for (;;) {
         const batch = await reaction.users.fetch({ limit: 100, after });
-        for (const user of batch.values()) if (!user.bot) found.add(user.id);
+        for (const user of batch.values()) if (!user.bot) reactors.add(user.id);
         if (batch.size < 100) break;
         after = batch.last()!.id;
       }
-      return found;
-    };
-    const checks = await users('✅');
-    const plus = await users('1️⃣');
+    }
     const members = await this.service.rows('Members', church);
     const requests = await this.service.rows('RideRequests', church);
-    for (const userId of checks) {
-      try { await this.service.reaction(church, userId, message.id, '✅', true); }
+    for (const userId of reactors) {
+      try { await this.service.reaction(church, userId, message.id, true); }
       catch (error) { if (!(error instanceof InputError)) throw error; try { await this.dm(userId, error.message); } catch { this.report('Reconciliation DM', error); } }
     }
     for (const ride of requests.filter(r => r.weekDate === week)) {
       const member = members.find(m => m.memberId === ride.memberId);
       if (!member) continue;
-      if (!checks.has(member.discordId) && ride.status === 'PENDING') await this.service.reaction(church, member.discordId, message.id, '✅', false);
-      if (!plus.has(member.discordId) && (truth(ride.hasPlusOne) || ride.plusOnePromptId)) await this.service.reaction(church, member.discordId, message.id, '1️⃣', false);
+      if (!reactors.has(member.discordId) && ride.status === 'PENDING') await this.service.reaction(church, member.discordId, message.id, false);
     }
-    for (const userId of plus) {
-      if (!checks.has(userId)) continue;
-      try {
-        const { ride } = await this.service.request(church, userId, week);
-        if (ride && !truth(ride.hasPlusOne) && !ride.plusOnePromptId) {
-          const eligible = await this.service.reaction(church, userId, message.id, '1️⃣', true);
-          if (eligible) await this.promptPlus(church, userId, eligible);
-        }
-      } catch (error) { if (!(error instanceof InputError)) throw error; this.report('Reconcile guest', error); }
-    }
-    await message.react('✅'); await message.react('1️⃣');
   }
   private async reset(church: Row) {
     const week = weekDate(church, this.service.now());

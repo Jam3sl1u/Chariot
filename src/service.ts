@@ -90,35 +90,17 @@ export class Service {
     if (requests.length > 1) throw new InputError('Duplicate ride requests; contact an admin.');
     return { member, ride: requests[0] };
   }
-  async reaction(church: Row, discordId: string, messageId: string, emoji: string, added: boolean) {
+  async reaction(church: Row, discordId: string, messageId: string, added: boolean) {
     const week = weekDate(church, this.now());
     if (messageId !== church.activeMessageId || church.activeWeekDate !== week) return;
     const { member, ride } = await this.request(church, discordId, week);
     const key = { memberId: member.memberId, weekDate: week };
-    if (emoji === '✅') {
-      if (added && church.assignmentCompletedWeek === week && ride?.status !== 'PENDING') throw new InputError('Assignments have run for this week. Please contact an admin.');
-      if (!added && !ride) return;
-      await this.patch('RideRequests', church, key, {
-        requestId: ride?.requestId || randomUUID(), status: added ? 'PENDING' : 'CANCELLED',
-        ...(!ride ? { hasPlusOne: 'false', plusOneName: '', plusOnePhone: '', plusOnePromptId: '' } : !added ? { plusOnePromptId: '' } : {}),
-      });
-    } else if (emoji === '1️⃣') {
-      if (!added) {
-        if (ride) await this.patch('RideRequests', church, key, { hasPlusOne: 'false', plusOneName: '', plusOnePhone: '', plusOnePromptId: '' });
-      } else {
-        if (!ride || ride.status !== 'PENDING') throw new InputError('React ✅ to request your own ride before adding a +1.');
-        if (church.assignmentCompletedWeek === week) throw new InputError('Please contact an admin to change your +1 after assignments have run.');
-        return ride;
-      }
-    }
-  }
-  async plusOne(church: Row, discordId: string, promptId: string, text: string) {
-    const week = weekDate(church, this.now());
-    const { ride } = await this.request(church, discordId, week);
-    if (!ride || ride.status !== 'PENDING' || ride.plusOnePromptId !== promptId || church.assignmentCompletedWeek === week) throw new InputError('That +1 request has expired. React 1️⃣ on the current post again or contact an admin.');
-    const lines = text.trim().split(/\r?\n/);
-    if (lines.length !== 2 || !lines[0].trim() || lines[0].length > 100 || !validPhone(lines[1].trim())) throw new InputError('Reply with two lines: full name, then a US phone number (+12025550123). You may use your own phone.');
-    await this.patch('RideRequests', church, { requestId: ride.requestId }, { hasPlusOne: 'true', plusOneName: lines[0].trim(), plusOnePhone: lines[1].trim(), plusOnePromptId: '' });
+    if (added && church.assignmentCompletedWeek === week && ride?.status !== 'PENDING') throw new InputError('Assignments have run for this week. Please contact an admin.');
+    if (!added && !ride) return;
+    await this.patch('RideRequests', church, key, {
+      requestId: ride?.requestId || randomUUID(), status: added ? 'PENDING' : 'CANCELLED',
+      ...(!ride ? { hasPlusOne: 'false', plusOneName: '', plusOnePhone: '', plusOnePromptId: '' } : {}),
+    });
   }
   async driverReply(church: Row, discordId: string, promptId: string, text: string) {
     const answer = yesNo(text);

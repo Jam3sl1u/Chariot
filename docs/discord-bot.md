@@ -54,7 +54,7 @@ Existing columns may be reordered; code maps them by header name.
 | Churches | `activeMessageId`, `activeWeekDate`, `availabilityResetWeek` | Bot. Clears all three on every process start; dates are the service Sunday, `YYYY-MM-DD`. |
 | Churches | `assignmentCompletedWeek` | Future assignment integration, or admin after a manual assignment run. Set to the service Sunday only **after assignments have actually completed**. Leave blank for this pass. |
 | Members | `phone`, `preferences`, `notificationPreference` | Registration; preference is `DISCORD_DM` in this MVP. |
-| RideRequests | `plusOnePhone`, `plusOnePromptId` | Bot; guest phone and the pending DM prompt. Guest names remain in the base `plusOneName` field. |
+| RideRequests | `hasPlusOne`, `plusOneName`, `plusOnePhone`, `plusOnePromptId` | Reserved for the deferred +1 feature; the MVP does not read or write them. |
 | Drivers | `isActive` | Admin; blank/TRUE means active, FALSE disables asks/replies. |
 | Drivers | `availabilityWeek`, `askedWeek`, `askMessageId`, `respondedWeek` | Bot; scopes/reset/reply context for each week. |
 
@@ -89,20 +89,19 @@ after a restart always creates a fresh message; old posts remain visible but ina
   edit `isAvailableThisWeek` and set `availabilityWeek` to the current service Sunday.
   Set `respondedWeek` too if the override should suppress reminders/resends.
 - Drivers reply **YES** or **NO**, case-insensitive, with no extra text or whitespace.
-  They can change an answer by replying again to the original ask. Each +1 reply
-  contains two lines: full name, then a US E.164 phone number. One guest per ride;
-  a new 1️⃣ flow updates the existing guest.
+  They can change an answer by replying again to the original ask.
 - DMs have no guild ID. Context comes only from the persisted prompt, scoped to
   its intended Discord user and church; membership is rechecked before writes.
   Use Discord's **Reply** action on the original bot message when more than one
   prompt is pending. A bare reply is accepted only when exactly one prompt is pending.
   Context survives restarts; old-week prompts and other users' replies are rejected.
-- Removing ✅ cancels the current week's request. Removing 1️⃣ clears guest details.
-  Startup and `/rides sync` reconcile both emojis, including paginated lists over
-  100 reactors. Re-registering does not itself create a ride request; react ✅ afterward.
+- Adding any reaction to the active weekly post creates a ride request; removing a
+  reaction cancels it. Startup and `/rides sync` reconcile all emoji reactions,
+  including paginated lists over 100 reactors. Re-registering does not itself create
+  a ride request; react again afterward. The +1 feature is deferred.
 - Saturday 10am is informational. The bot does not infer that an assignment ran
   merely because the clock passed 11:45. `assignmentCompletedWeek` closes new
-  requests/+1 changes once the separate assignment pass completes. Cancellations
+  requests once the separate assignment pass completes. Cancellations
   stay available. Late driver YES saves availability and explains that an admin
   must arrange placement; this pass does not change `Assignments` or invoke autofill.
 
@@ -120,51 +119,46 @@ Use test users in one shared test guild and channel and watch the Sheet after ea
 below mean the coming local service Sunday, not today's date.
 
 1. **Registration in both churches:** as an admin, run `/rides post church:church-a`
-   and `/rides post church:church-b` in the shared channel. Each post has its own ✅/1️⃣
-   anchors and saved `activeMessageId`. React ✅ to A as a new user: the reaction remains,
+   and `/rides post church:church-b` in the shared channel. Each post has its own saved
+   `activeMessageId`. React with any emoji to A as a new user: the reaction remains,
    a Church A **Start registration** button arrives by DM, and no request exists. Complete the survey
-   with name, `+12025550123`, preferences, and a local zone; then react ✅ to A again.
+   with name, `+12025550123`, preferences, and a local zone; then react again to A.
    Expect one PENDING A request. Repeat from B's post with the same account: expect a
    distinct B `Members` row and B request. The registration confirmation is an
    ephemeral Discord response, not a welcome DM. Invalid survey data must not create a row.
 2. **Post routing and cancellation:** re-run either church's `/rides post` command:
-   expect no duplicate for that church. Remove ✅ from A: only A becomes CANCELLED.
+   expect no duplicate for that church. Remove your reaction from A: only A becomes CANCELLED.
    Re-add it: the same A request becomes PENDING. Reactions to unrelated or
    previous-week messages do nothing.
-3. **Guest:** react 1️⃣ after ✅. Reply to that DM with `Test Guest` on line 1 and
-   `+12025550123` on line 2. Expect `hasPlusOne=TRUE`, name and phone on that week's
-   request only. Invalid phones must not save. Remove 1️⃣: FALSE and cleared name/
-   phone. Re-add and submit another guest: same ride row, still only one guest.
-   React 1️⃣ before ✅: guidance to request your own ride first.
-4. **Driver replies:** seed driver rows for the same Discord account in both
+3. **Driver replies:** seed driver rows for the same Discord account in both
    churches; run `/rides ask-drivers church:church-a` and then `church:church-b`.
    Expect two labeled DMs, FALSE default,
    and distinct saved ask IDs. Send bare `YES`: the bot must ask you to select a
    prompt. Reply `yes` to A's ask: only A becomes TRUE. Reply `maybe`: error and no
    change. Reply `NO` to A's ask: only A becomes FALSE. B remains FALSE until its
-   own valid answer. A driver who says NO can still react ✅ for a passenger ride.
+   own valid answer. A driver who says NO can still react to request a passenger ride.
    Re-run `/rides ask-drivers`: only nonresponders are asked. A non-admin cannot run it.
-5. **Restart/manual reset:** stop and start the bot. Confirm both Church rows have
+4. **Restart/manual reset:** stop and start the bot. Confirm both Church rows have
    blank `activeMessageId`, `activeWeekDate`, and `availabilityResetWeek`, and no
    post/driver ask occurs on its own. Run `/rides post church:church-a` and `/rides sync
    church:church-a`; confirm the new post is the only active one and repeated syncs
-   create no duplicate rows or guest prompts. Reply to a previously sent driver/+1 DM
-   after restart: it still targets its original church.
-6. **Manual driver asks:** run `/rides ask-drivers church:church-a`; confirm availability
+   create no duplicate rows. Reply to a previously sent driver DM after restart: it
+   still targets its original church.
+5. **Manual driver asks:** run `/rides ask-drivers church:church-a`; confirm availability
    is reset and only the appropriate drivers are asked. The configured schedule fields
    are retained for future automation but do not trigger actions in this manual mode.
-7. **Tenant/stale protections:** reply to an old-week prompt or another user's
+6. **Tenant/stale protections:** reply to an old-week prompt or another user's
    prompt: no write. Remove a test guild mapping after its prompts have been sent:
    further events must not write under another church. Duplicate mappings must log
    an ambiguity and drop writes. Restore the valid Church rows afterward.
-8. **Assignment boundary:** in church A only, manually set `assignmentCompletedWeek`
-   to the current service Sunday. A fresh ✅ or guest addition must be refused;
-   removal of ✅ still cancels. B remains open. Clear this test marker afterward.
+7. **Assignment boundary:** in church A only, manually set `assignmentCompletedWeek`
+   to the current service Sunday. A fresh reaction must be refused; removing a
+   reaction still cancels. B remains open. Clear this test marker afterward.
    After Saturday 11:45 a driver YES is saved with a manual-placement notice;
    verify that `Assignments` remains untouched.
-9. **DM failure:** disable server DMs on a test user, then register. Registration
-   must still save and the ephemeral response must explain the failed welcome DM.
-   Re-enable DMs and retry guest/driver prompts with reactions or `/rides ask-drivers`.
+8. **DM failure:** disable server DMs on a test user, then react to a weekly post.
+   No registration or ride request is created. Re-enable DMs and retry the reaction;
+   then retry driver prompts with `/rides ask-drivers`.
 
 Automated checks: `npm run typecheck` and `npm test` (Node's built-in test runner,
 no Jest/Playwright infrastructure). They use in-memory Sheets/Discord doubles;

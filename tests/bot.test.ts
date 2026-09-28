@@ -43,31 +43,26 @@ test('DM context survives restart and refuses another user or stale week', async
 });
 test('NO driver remains a passenger; late YES saves availability with manual placement notice', async () => {
   const f = fixture(); drivers(f); await register(f); const d = discordFixture(f); await d.bot.tick();
-  await f.service.run('guild-a', c => f.service.reaction(c, 'person', 'post-a', '✅', true));
+  await f.service.run('guild-a', c => f.service.reaction(c, 'person', 'post-a', true));
   await d.sendDM('person', 'NO', d.dms[0].id);
   assert.equal(f.db.data.RideRequests[0].status, 'PENDING');
   f.setNow('2026-09-26T12:30:00'); await d.sendDM('person', 'YES', d.dms[0].id);
   assert.equal(f.db.data.Drivers[0].isAvailableThisWeek, 'true'); assert.match(d.replies.at(-1)!, /admin must arrange/);
 });
-test('reconciliation restores offline additions and removes absent reactions, including guest data', async () => {
+test('reconciliation restores any offline reaction and removes absent riders', async () => {
   const f = fixture(); await register(f); await register(f, 'guild-a', 'absent'); const d = discordFixture(f);
-  await f.service.run('guild-a', c => f.service.reaction(c, 'absent', 'post-a', '✅', true));
-  Object.assign(f.db.data.RideRequests[0], { hasPlusOne: 'true', plusOneName: 'Guest', plusOnePhone: '+12025550123' });
+  await f.service.run('guild-a', c => f.service.reaction(c, 'absent', 'post-a', true));
   const post = d.channels.get('channel-a')!.history.get('post-a')!;
-  post.setUsers('✅', ['person']); post.setUsers('1️⃣', ['person']);
+  post.setUsers('🚙', ['person']);
   await f.service.run('guild-a', c => d.bot.reconcile(c));
-  assert.equal(f.db.data.RideRequests[0].status, 'CANCELLED'); assert.equal(f.db.data.RideRequests[0].plusOneName, '');
-  assert.equal(f.db.data.RideRequests[1].status, 'PENDING'); assert.equal(d.dms.length, 1);
-  const restarted = discordFixture(f);
-  await restarted.sendDM('person', 'Guest\n+12025550123', d.dms[0].id);
-  assert.equal(f.db.data.RideRequests[1].hasPlusOne, 'true');
-  await f.service.run('guild-a', c => d.bot.reconcile(c)); assert.equal(d.dms.length, 1);
+  assert.equal(f.db.data.RideRequests[0].status, 'CANCELLED');
+  assert.equal(f.db.data.RideRequests[1].status, 'PENDING'); assert.equal(d.dms.length, 0);
 });
-test('manual posting anchors reactions and creates a fresh post after startup state is cleared', async () => {
+test('manual posting creates a fresh post after startup state is cleared', async () => {
   const f = fixture(); const d = discordFixture(f); f.a.activeMessageId = ''; f.a.activeWeekDate = '';
   await f.service.run('guild-a', c => d.bot.post(c));
   const channel = d.channels.get('channel-a')!;
-  assert.equal(channel.sent.length, 1); assert.equal(channel.sent[0].reactions.cache.size, 2);
+  assert.equal(channel.sent.length, 1); assert.equal(channel.sent[0].reactions.cache.size, 0);
   assert.equal(f.db.data.Churches[0].activeMessageId, channel.sent[0].id);
   f.db.data.Churches[0].activeMessageId = ''; f.db.data.Churches[0].activeWeekDate = '';
   await f.service.run('guild-a', c => d.bot.post(c));
@@ -84,7 +79,7 @@ test('an unregistered reaction starts a church-specific survey without creating 
   f.b.discordGuildId = 'guild-a'; f.b.weeklyPostChannelId = 'channel-a';
   f.a.registrationDmTemplate = 'Welcome to {churchName}! Tap below to register.';
   const d = discordFixture(f);
-  const first = await d.sendReaction('new-member', 'guild-a', 'channel-a', 'post-a');
+  const first = await d.sendReaction('new-member', 'guild-a', 'channel-a', 'post-a', '🚙');
   assert.equal(first.removed, false); assert.equal(d.dms.length, 1); assert.equal(d.dms[0].content, 'Welcome to Church a! Tap below to register.');
   assert.equal(f.db.data.Members.length, 0); assert.equal(f.db.data.RideRequests.length, 0);
   await f.service.runChurch('a', c => f.service.register(c, 'new-member', { name: 'New Member', phone: '+12025550123', zone: 'Zone a' }));
