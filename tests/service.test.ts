@@ -29,12 +29,14 @@ test('churches sharing a guild and channel are isolated by active message', asyn
   await f.service.runMessage('guild-a', 'post-b', c => f.service.reaction(c, 'person-b', 'post-b', true));
   assert.deepEqual(f.db.data.RideRequests.map(r => [r.churchId, r.status]).sort(), [['a', 'PENDING'], ['b', 'PENDING']]);
 });
-test('same Discord member registers independently in two churches, then updates in place', async () => {
+test('one registration is reused when the member requests a ride from another church', async () => {
   const f = fixture(); await register(f); await register(f, 'guild-b');
   const id = f.db.data.Members[0].memberId;
-  await f.service.run('guild-a', c => f.service.register(c, 'person', { name: 'Updated', phone: '+12025550124', zone: 'Other / Not Listed' }));
-  assert.equal(f.db.data.Members.length, 2); assert.equal(f.db.data.Members[0].memberId, id);
-  assert.equal(f.db.data.Members[0].name, 'Updated'); assert.equal(f.db.data.Members[1].name, 'Test Member');
+  assert.equal(f.db.data.Members.length, 1); assert.equal(f.db.data.Members[0].memberId, id);
+  await f.service.run('guild-b', c => f.service.reaction(c, 'person', 'post-b', true));
+  assert.equal(f.db.data.Members.length, 2); assert.equal(f.db.data.Members[1].churchId, 'b');
+  assert.equal(f.db.data.Members[1].zone, 'Zone a');
+  assert.equal(f.db.data.RideRequests[0].churchId, 'b');
   assert.ok(f.db.writes.every(w => w.row.churchId));
 });
 test('registration rejects another church’s zone and invalid phone without writes', async () => {

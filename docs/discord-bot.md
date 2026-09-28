@@ -61,8 +61,11 @@ Existing columns may be reordered; code maps them by header name.
 `Churches.churchId` must be unique. Every church row uses the same `discordGuildId` and
 `weeklyPostChannelId`; reactions are routed only by the weekly post's saved
 `activeMessageId`. An unregistered reaction remains visible but is ignored while the
-bot DMs that member a church-specific **Start registration** button. Each other row's `churchId` must match a configured
-church. The same Discord user can belong to both churches; use distinct driver/member rows for each. Each driver needs a unique
+bot DMs that member a **Start registration** button. Registration is shared across
+all churches: after a member completes it once, reacting to any church's active post
+creates a ride request using the same pickup location. The bot creates that church's
+internal `Members` row only when needed, so assignments remain isolated. Each other
+row's `churchId` must match a configured church. Each driver needs a unique
 `driverId`, its `churchId`, `name`, `discordId`, `seatsAvailable`, and `homeZone`.
 Set `isAvailableThisWeek` to FALSE initially. `memberId` is optional and does not
 prevent a driver from requesting a passenger ride when they answer NO.
@@ -123,8 +126,9 @@ below mean the coming local service Sunday, not today's date.
    `activeMessageId`. React with any emoji to A as a new user: the reaction remains,
    a Church A **Start registration** button arrives by DM, and no request exists. Complete the survey
    with name, `+12025550123`, preferences, and a local zone; then react again to A.
-   Expect one PENDING A request. Repeat from B's post with the same account: expect a
-   distinct B `Members` row and B request. The registration confirmation is an
+   Expect one PENDING A request. React to B's post with the same account: expect an
+   immediate B request using the same pickup location (and an internal B `Members`
+   row). The registration confirmation is an
    ephemeral Discord response, not a welcome DM. Invalid survey data must not create a row.
 2. **Post routing and cancellation:** re-run either church's `/rides post` command:
    expect no duplicate for that church. Remove your reaction from A: only A becomes CANCELLED.

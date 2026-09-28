@@ -68,23 +68,37 @@ export class Service {
     if (!matches.length && (tab === 'Churches' || tab === 'Drivers' || (tab === 'RideRequests' && key.requestId))) throw new InputError('That record was removed. Refresh and try again.');
     await this.db.save(tab, { ...key, ...values, churchId: church.churchId }, matches[0]?.i);
   }
-  async member(church: Row, discordId: string) {
+  private async localMember(church: Row, discordId: string) {
     const matches = (await this.rows('Members', church)).filter(r => r.discordId === discordId);
     if (matches.length > 1) throw new InputError('Duplicate member rows; contact an admin.');
     return matches[0];
   }
+  async member(church: Row, discordId: string) {
+    return (await this.localMember(church, discordId)) || (await this.db.read('Members')).rows.find(row => row.discordId === discordId);
+  }
   async register(church: Row, discordId: string, data: Row) {
+    const existing = await this.member(church, discordId);
+    if (existing) return existing;
     if (!data.name?.trim() || !validPhone(data.phone)) throw new InputError('Enter your name and a US phone number such as +12025550123.');
     const zones = await this.rows('Zones', church);
     if (data.zone !== 'Other / Not Listed' && !zones.some(z => z.zoneName === data.zone)) throw new InputError('That pickup location is no longer available. Run /register again.');
-    const existing = await this.member(church, discordId);
     await this.patch('Members', church, { discordId }, {
-      memberId: existing?.memberId || randomUUID(), createdAt: existing?.createdAt || this.now().toISO()!,
+      memberId: randomUUID(), createdAt: this.now().toISO()!,
       name: data.name.trim(), phone: data.phone, preferences: data.preferences ?? '', zone: data.zone, notificationPreference: 'DISCORD_DM',
     });
+    return this.localMember(church, discordId);
   }
   async request(church: Row, discordId: string, week: string) {
-    const member = await this.member(church, discordId);
+    let member = await this.localMember(church, discordId);
+    const profile = member || await this.member(church, discordId);
+    if (!member && profile) {
+      await this.patch('Members', church, { discordId }, {
+        memberId: randomUUID(), createdAt: profile.createdAt || this.now().toISO()!, name: profile.name,
+        phone: profile.phone, preferences: profile.preferences ?? '', zone: profile.zone,
+        notificationPreference: profile.notificationPreference || 'DISCORD_DM',
+      });
+      member = await this.localMember(church, discordId);
+    }
     if (!member) throw new InputError('Please run /register in the church’s weekly rides channel first.');
     const requests = (await this.rows('RideRequests', church)).filter(r => r.memberId === member.memberId && r.weekDate === week);
     if (requests.length > 1) throw new InputError('Duplicate ride requests; contact an admin.');

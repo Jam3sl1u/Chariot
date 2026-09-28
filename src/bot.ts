@@ -92,9 +92,9 @@ export class Bot {
       field('name', 'Full name', true, 100), field('phone', 'US phone (+12025550123)', true, 12), field('preferences', 'Ride preferences (optional)', false, 1000, TextInputStyle.Paragraph),
     );
   }
-  private surveyKey(churchId: string, userId: string) { return `${churchId}:${userId}`; }
+  private surveyKey(userId: string) { return userId; }
   private async startSurvey(church: Row, userId: string) {
-    const key = this.surveyKey(church.churchId, userId);
+    const key = this.surveyKey(userId);
     const current = this.surveys.get(key);
     if (current && current.expires >= Date.now()) return;
     this.surveys.set(key, { churchId: church.churchId, userId, expires: Date.now() + 15 * 60_000 });
@@ -126,8 +126,8 @@ export class Bot {
       }
       if (i.isButton() && i.customId.startsWith('survey:')) {
         const churchId = i.customId.slice('survey:'.length);
-        const survey = this.surveys.get(this.surveyKey(churchId, i.user.id));
-        if (!survey || survey.expires < Date.now()) throw new InputError('Your survey link expired. React to the weekly post again to start over.');
+        const survey = this.surveys.get(this.surveyKey(i.user.id));
+        if (!survey || survey.churchId !== churchId || survey.expires < Date.now()) throw new InputError('Your survey link expired. React to the weekly post again to start over.');
         await i.showModal(this.modal(churchId)); return;
       }
       await i.deferReply({ flags: MessageFlags.Ephemeral });
@@ -190,7 +190,7 @@ export class Bot {
         } else if (action === 'finish' && i.isStringSelectMenu() && session.data.zone) {
           await this.service.register(church, i.user.id, session.data);
           this.registrations.delete(id);
-          this.surveys.delete(this.surveyKey(church.churchId, i.user.id));
+          this.surveys.delete(this.surveyKey(i.user.id));
           await i.editReply(`Registration saved for ${church.churchName}. React again to this church's weekly post to request a ride.`);
         }
       });

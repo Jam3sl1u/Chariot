@@ -74,7 +74,7 @@ test('manual sync clears a missing active weekly post', async () => {
   await f.service.runChurch('a', c => d.bot.reconcile(c));
   assert.equal(f.db.data.Churches[0].activeMessageId, ''); assert.equal(f.db.data.Churches[0].activeWeekDate, '');
 });
-test('an unregistered reaction starts a church-specific survey without creating a ride request', async () => {
+test('an unregistered reaction starts one shared survey without creating a ride request', async () => {
   const f = fixture();
   f.b.discordGuildId = 'guild-a'; f.b.weeklyPostChannelId = 'channel-a';
   f.a.registrationDmTemplate = 'Welcome to {churchName}! Tap below to register.';
@@ -85,4 +85,6 @@ test('an unregistered reaction starts a church-specific survey without creating 
   await f.service.runChurch('a', c => f.service.register(c, 'new-member', { name: 'New Member', phone: '+12025550123', zone: 'Zone a' }));
   const second = await d.sendReaction('new-member', 'guild-a', 'channel-a', 'post-a');
   assert.equal(second.removed, false); assert.equal(f.db.data.RideRequests.length, 1); assert.equal(f.db.data.RideRequests[0].churchId, 'a');
+  await d.sendReaction('new-member', 'guild-a', 'channel-a', 'post-b', '🎉');
+  assert.equal(d.dms.length, 1); assert.equal(f.db.data.RideRequests.length, 2); assert.equal(f.db.data.RideRequests[1].churchId, 'b');
 });
