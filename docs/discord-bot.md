@@ -50,7 +50,7 @@ Existing columns may be reordered; code maps them by header name.
 
 | Tab | Additional columns | Who sets them |
 |---|---|---|
-| Churches | `timezone`, `weeklySendDay`, `weeklySendTime`, `weeklyMessageTemplate` | Admin: IANA timezone (e.g. `America/Los_Angeles`), full English weekday (e.g. `Wednesday`), 24h `HH:mm`, and post text (max 2000 characters). No guessed timezone/schedule defaults. |
+| Churches | `timezone`, `weeklySendDay`, `weeklySendTime`, `weeklyMessageTemplate`, `registrationDmTemplate` | Admin: IANA timezone (e.g. `America/Los_Angeles`), full English weekday (e.g. `Wednesday`), 24h `HH:mm`, weekly-post text (max 2000 characters), and optional registration-DM text (max 2000 characters). Use `{churchName}` in the DM template to insert that row's church name. A blank DM template uses the built-in message. No guessed timezone/schedule defaults. |
 | Churches | `activeMessageId`, `activeWeekDate`, `availabilityResetWeek` | Bot. Clears all three on every process start; dates are the service Sunday, `YYYY-MM-DD`. |
 | Churches | `assignmentCompletedWeek` | Future assignment integration, or admin after a manual assignment run. Set to the service Sunday only **after assignments have actually completed**. Leave blank for this pass. |
 | Members | `phone`, `preferences`, `notificationPreference` | Registration; preference is `DISCORD_DM` in this MVP. |

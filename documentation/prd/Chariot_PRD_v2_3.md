@@ -684,7 +684,7 @@ Every table carries a `churchId` FK. All churches use one shared Discord guild a
 | MC-001 | Each Church row holds everything needed to run one church's weekly cycle independently. | HIGH | PLANNED |
 | MC-002 | All tables (Member, Driver, RideRequest, RideAssignment, PickupPoint, PickupPointDistance) are scoped by `churchId`, enforced at the application layer per Section 2.7. No cross-church data access. | HIGH | PLANNED |
 | MC-003 | The bot resolves a weekly-post reaction to exactly one church by `activeMessageId` and verifies the shared guild/channel; it resolves a DM only from a persisted, user-bound prompt context. Unknown or ambiguous routes are dropped without a write. | HIGH | PLANNED |
-| MC-004 | Each church has its own `weeklySendDay`, `weeklySendTime`, `reminderSendTime`, `weeklyMessageTemplate`, timezone, and `PickupPoint` registry while sharing the same Discord guild and rides channel. | HIGH | PLANNED |
+| MC-004 | Each church has its own `weeklySendDay`, `weeklySendTime`, `reminderSendTime`, `weeklyMessageTemplate`, `registrationDmTemplate`, timezone, and `PickupPoint` registry while sharing the same Discord guild and rides channel. | HIGH | PLANNED |
 | MC-005 | A super-admin can onboard new Church rows, configure all settings, assign/remove admins for a church, and deactivate a church via the admin panel. | HIGH | PLANNED |
 | MC-006 | Per-church pickup-location structure: **resolved in v1.1.** Rather than a simple reorderable list, each church maintains its own geocoded `PickupPoint` registry, and the assignment algorithm computes genuine route-based groupings from it (Section 7.1). This fully supersedes the earlier, simpler "reorder a fixed list of 8 zones" idea. | HIGH | PLANNED |
 
@@ -701,7 +701,7 @@ Members register through a **church-specific survey initiated by their first rea
 **Discord reaction-initiated survey flow:**
 1. Member reacts ✅ or 1️⃣ to one church's current weekly post in the shared rides channel. The post's `activeMessageId` identifies that church.
 2. If the member has no completed `MemberChurch` registration for that church, the bot does **not** create a ride request or +1. It leaves the reaction visible but ignores it.
-3. The bot sends the member a DM with a **Start registration** button for that church. Only its intended member can use the button. If DMs are disabled, no registration or ride request is created.
+3. The bot sends the member a DM with a **Start registration** button for that church. Its text comes from that Church's optional `registrationDmTemplate` (`{churchName}` is replaced with the church name); blank uses the built-in message. Only its intended member can use the button. If DMs are disabled, no registration or ride request is created.
 4. The button opens a modal: name, phone (US E.164 validated), preferences. After submission, the bot presents a pickup-location dropdown populated from that church's `PickupPoint` registry, always including "Other / Not Listed" last, then asks notification preference: **SMS** or **Discord DM**.
 5. Bot checks if a `Member` with that phone number already exists:
    - **New account** → create `Member` row with chosen preference, then create `MemberChurch` record
@@ -3629,6 +3629,7 @@ Conventions: tasks within a phase that share no files can run in parallel; a tas
 | 2.5 | 2026-09-27 | Moved the reaction-initiated survey entry point from DM to the shared channel. An unregistered reaction now produces a member-specific, non-sensitive **Start registration** button under that church's weekly post; clicking it opens the same survey modal. |
 | 2.6 | 2026-09-27 | Set the MVP bot to explicit manual mode: every start clears active-post and availability-reset state, performs no reconciliation or scheduled work, and waits for admin `/rides` commands. |
 | 2.7 | 2026-09-27 | Moved the initial registration button back to DM and stopped removing unregistered reactions. Such reactions stay visible but do not create requests; registration confirmation remains DM-free. |
+| 2.8 | 2026-09-27 | Added an optional per-church `registrationDmTemplate` in the Google Sheet. Its `{churchName}` placeholder is expanded before the registration button DM is sent; blank retains the built-in copy. |
 
 ---
 
@@ -3719,7 +3720,7 @@ Web application and member portal (§5) · Postgres/Prisma schema (§6) · auth/
 
 | Tab | Columns |
 |---|---|
-| `Churches` | `churchId`, `churchName`, `discordGuildId`, `weeklyPostChannelId`, `driverAskChannelId` |
+| `Churches` | `churchId`, `churchName`, `discordGuildId`, `weeklyPostChannelId`, `driverAskChannelId`, `registrationDmTemplate` (optional; `{churchName}` placeholder supported) |
 | `Members` | `memberId`, `churchId`, `name`, `discordId`, `zone`, `createdAt` |
 | `Drivers` | `driverId`, `churchId`, `memberId` (link, optional), `name`, `discordId`, `seatsAvailable`, `homeZone`, `isAvailableThisWeek` |
 | `Zones` | `zoneId`, `churchId`, `zoneName`, `zonePriorityOrder` — the fixed ordered list, one set per church (per §29.2's algorithm default) |
@@ -3733,7 +3734,7 @@ Web application and member portal (§5) · Postgres/Prisma schema (§6) · auth/
 | ID | Requirement | Priority | Status |
 |---|---|---|---|
 | MVP-000 | All Churches rows use the same configured Discord guild and rides channel. On a weekly-post reaction, the bot resolves `(guildId, channelId, messageId)` → exactly one `churchId` through that church's `activeMessageId`; unknown or ambiguous messages are logged and dropped, never written under a guessed church. | HIGH | PLANNED |
-| MVP-001 | An unregistered member's first ✅ or 1️⃣ reaction to a church's weekly post leaves the reaction visible but sends that church's member-specific **Start registration** button by DM and writes neither `Members` nor `RideRequests` until the survey is completed. On survey completion, the bot creates or updates the `Members` row by `discordId` + `churchId`; the member must react again to request a ride. | HIGH | PLANNED |
+| MVP-001 | An unregistered member's first ✅ or 1️⃣ reaction to a church's weekly post leaves the reaction visible but sends that church's member-specific **Start registration** button by DM using optional `registrationDmTemplate` text; it writes neither `Members` nor `RideRequests` until the survey is completed. On survey completion, the bot creates or updates the `Members` row by `discordId` + `churchId`; the member must react again to request a ride. | HIGH | PLANNED |
 | MVP-002 | ✅/removal of ✅ on a weekly post creates/cancels a `RideRequests` row only for a member already registered for that post's church, week, and `churchId`. | HIGH | PLANNED |
 | MVP-009 | On every bot process start, clear `activeMessageId`, `activeWeekDate`, and `availabilityResetWeek` for every Church row. The bot performs no automatic scheduled/reconciliation work and waits for an admin `/rides` command. | HIGH | PLANNED |
 | MVP-003 | 1️⃣ reaction flow writes `hasPlusOne`/`plusOneName` onto the member's `RideRequests` row for that week. | HIGH | PLANNED |

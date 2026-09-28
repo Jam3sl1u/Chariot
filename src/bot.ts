@@ -99,7 +99,8 @@ export class Bot {
     if (current && current.expires >= Date.now()) return;
     this.surveys.set(key, { churchId: church.churchId, userId, expires: Date.now() + 15 * 60_000 });
     try {
-      await this.dm(userId, `[${church.churchName}] Complete your registration survey before requesting a ride.`, [new ActionRowBuilder<ButtonBuilder>().addComponents(new ButtonBuilder().setCustomId(`survey:${church.churchId}`).setLabel('Start registration').setStyle(ButtonStyle.Primary))]);
+      const content = church.registrationDmTemplate?.trim() || `[${church.churchName}] Complete your registration survey before requesting a ride.`;
+      await this.dm(userId, content.replaceAll('{churchName}', church.churchName), [new ActionRowBuilder<ButtonBuilder>().addComponents(new ButtonBuilder().setCustomId(`survey:${church.churchId}`).setLabel('Start registration').setStyle(ButtonStyle.Primary))]);
     } catch {
       this.surveys.delete(key);
     }
