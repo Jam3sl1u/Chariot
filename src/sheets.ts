@@ -3,7 +3,7 @@ import { sheets, auth, type sheets_v4 } from 'googleapis/build/src/apis/sheets/i
 
 export type Row = Record<string, string>;
 export const columns = {
-  Churches: ['churchId', 'churchName', 'discordGuildId', 'weeklyPostChannelId', 'driverAskChannelId', 'timezone', 'weeklySendDay', 'weeklySendTime', 'weeklyMessageTemplate', 'registrationDmTemplate', 'activeMessageId', 'activeWeekDate', 'availabilityResetWeek', 'assignmentCompletedWeek'],
+  Churches: ['churchId', 'churchName', 'discordGuildId', 'weeklyPostChannelId', 'driverAskChannelId', 'driverRoleId', 'timezone', 'weeklySendDay', 'weeklySendTime', 'weeklyMessageTemplate', 'driverAskMessageTemplate', 'registrationDmTemplate', 'activeMessageId', 'activeWeekDate', 'driverAskMessageId', 'driverAskWeek', 'availabilityResetWeek', 'assignmentCompletedWeek'],
   Members: ['memberId', 'churchId', 'name', 'discordId', 'zone', 'createdAt', 'phone', 'preferences', 'notificationPreference', 'profileStatus'],
   Drivers: ['driverId', 'churchId', 'memberId', 'name', 'discordId', 'seatsAvailable', 'homeZone', 'isAvailableThisWeek', 'isActive', 'availabilityWeek', 'askedWeek', 'askMessageId', 'respondedWeek'],
   Zones: ['zoneId', 'zoneName', 'zonePriorityOrder'],

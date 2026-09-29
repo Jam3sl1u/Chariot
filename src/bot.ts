@@ -49,14 +49,28 @@ export class Bot {
   private async dm(userId: string, content: string, components: ActionRowBuilder<ButtonBuilder>[] = []) {
     return (await this.client.users.fetch(userId)).send({ content, components, allowedMentions: { parse: [] } });
   }
-  private async channel(church: Row) {
-    const channel = await this.client.channels.fetch(church.weeklyPostChannelId);
-    if (!channel || !channel.isTextBased() || !channel.isSendable() || !('guildId' in channel) || channel.guildId !== church.discordGuildId) throw new InputError('The weekly post channel must belong to this church’s server.');
+  private async channel(church: Row, channelId = church.weeklyPostChannelId, label = 'weekly post') {
+    const channel = await this.client.channels.fetch(channelId);
+    if (!channel || !channel.isTextBased() || !channel.isSendable() || !('guildId' in channel) || channel.guildId !== church.discordGuildId) throw new InputError(`The ${label} channel must belong to this church’s server.`);
     return channel;
   }
   private async isMember(church: Row, userId: string) {
     const guild = await this.client.guilds.fetch(church.discordGuildId);
     await guild.members.fetch(userId);
+  }
+  private async grantDriverRole(church: Row, userId: string) {
+    if (!church.driverRoleId?.trim()) throw new InputError('Set driverRoleId in Churches before allowing driver registration.');
+    const guild = await this.client.guilds.fetch(church.discordGuildId);
+    const member = await guild.members.fetch(userId);
+    await member.roles.add(church.driverRoleId);
+  }
+  private async removeDriverRole(church: Row, userId: string) {
+    if (!church.driverRoleId?.trim()) return;
+    try {
+      const guild = await this.client.guilds.fetch(church.discordGuildId);
+      const member = await guild.members.fetch(userId);
+      await member.roles.remove(church.driverRoleId);
+    } catch { /* Preserve the original registration error. */ }
   }
   async start(token: string) {
     this.client.once(Events.ClientReady, () => {
@@ -91,6 +105,7 @@ export class Bot {
     const field = (id: string, label: string, required: boolean, max: number, style = TextInputStyle.Short) => new ActionRowBuilder<TextInputBuilder>().addComponents(new TextInputBuilder().setCustomId(id).setLabel(label).setStyle(style).setRequired(required).setMaxLength(max));
     return new ModalBuilder().setCustomId(`register-form:${churchId}`).setTitle('Register for church rides').addComponents(
       field('name', 'Full name', true, 100), field('phone', 'US phone (+12025550123)', true, 12), field('preferences', 'Ride preferences (optional)', false, 1000, TextInputStyle.Paragraph),
+      field('isDriver', 'Volunteer as a driver? (YES or NO)', true, 3), field('seatsAvailable', 'Seats you can offer (drivers only)', false, 2),
     );
   }
   private surveyKey(userId: string) { return userId; }
@@ -157,7 +172,7 @@ export class Bot {
           try {
             if (sub === 'post') await this.post(church);
             if (sub === 'sync') await this.reconcile(church);
-            if (sub === 'ask-drivers') { await this.reset(church); await this.ask(church, true); }
+            if (sub === 'ask-drivers') { await this.reset(church); await this.ask(church); }
           } catch (error) {
             this.report(`Interaction /rides ${sub} (${church.churchId})`, error);
             throw error;
@@ -167,8 +182,11 @@ export class Bot {
         for (const [key, value] of this.registrations) if (value.expires < Date.now()) this.registrations.delete(key);
         for (const [key, value] of this.surveys) if (value.expires < Date.now()) this.surveys.delete(key);
         if (i.isModalSubmit() && i.customId.startsWith('register-form:')) {
-          const data = { name: i.fields.getTextInputValue('name').trim(), phone: i.fields.getTextInputValue('phone').trim(), preferences: i.fields.getTextInputValue('preferences').trim() };
+          const driverAnswer = i.fields.getTextInputValue('isDriver').trim().toUpperCase();
+          const data = { name: i.fields.getTextInputValue('name').trim(), phone: i.fields.getTextInputValue('phone').trim(), preferences: i.fields.getTextInputValue('preferences').trim(), isDriver: String(driverAnswer === 'YES'), seatsAvailable: i.fields.getTextInputValue('seatsAvailable').trim() };
           if (!data.name || !validPhone(data.phone)) throw new InputError('Enter your name and a valid US E.164 phone (+12025550123). Run /register again.');
+          if (driverAnswer !== 'YES' && driverAnswer !== 'NO') throw new InputError('Answer YES or NO for whether you want to volunteer as a driver.');
+          if (data.isDriver === 'true' && (!/^\d+$/.test(data.seatsAvailable) || Number(data.seatsAvailable) < 1 || Number(data.seatsAvailable) > 20)) throw new InputError('Volunteer drivers must enter a whole number of seats from 1 to 20.');
           const zones = (await this.service.rows('Zones', church)).sort((a, b) => Number(a.zonePriorityOrder) - Number(b.zonePriorityOrder)).map(z => z.zoneName).filter(z => z && z !== 'Other / Not Listed');
           const id = randomUUID();
           const session = { churchId: church.churchId, userId: i.user.id, expires: Date.now() + 15 * 60_000, data, zones: [...new Set(zones)] };
@@ -189,7 +207,10 @@ export class Bot {
           session.data.zone = zone;
           await i.editReply({ content: 'The MVP sends notifications by Discord DM.', components: [new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(new StringSelectMenuBuilder().setCustomId(`finish:${id}`).setPlaceholder('Confirm notification preference').addOptions({ label: 'Discord DM', value: 'DISCORD_DM' }))] });
         } else if (action === 'finish' && i.isStringSelectMenu() && session.data.zone) {
-          await this.service.register(church, i.user.id, session.data);
+          const volunteering = session.data.isDriver === 'true';
+          if (volunteering) await this.grantDriverRole(church, i.user.id);
+          try { await this.service.register(church, i.user.id, session.data); }
+          catch (error) { if (volunteering) await this.removeDriverRole(church, i.user.id); throw error; }
           this.registrations.delete(id);
           this.surveys.delete(this.surveyKey(i.user.id));
           await i.editReply(`Registration saved for ${church.churchName}. React again to this church's weekly post to request a ride.`);
@@ -209,13 +230,21 @@ export class Bot {
       if (reaction.partial) await reaction.fetch();
       const message = reaction.message.partial ? await reaction.message.fetch() : reaction.message;
       if (!message.guildId || message.author?.id !== this.client.user?.id) return;
+      let handled = false;
       await this.service.runMessage(message.guildId, message.id, async church => {
+        handled = true;
         if (message.channelId !== church.weeklyPostChannelId) return;
         if (added && !await this.service.member(church, user.id)) {
           await this.service.beginRegistration(church, user.id);
           await this.startSurvey(church, user.id);
         }
         await this.service.reaction(church, user.id, message.id, added);
+      });
+      if (handled) return;
+      await this.service.runDriverAskMessage(message.guildId, message.id, async church => {
+        if (message.channelId !== church.driverAskChannelId) return;
+        await this.isMember(church, user.id);
+        await this.service.driverReaction(church, user.id, message.id, added);
       });
     } catch (error) {
       this.report('Reaction', error);
@@ -307,16 +336,13 @@ export class Bot {
     }
     await this.service.patch('Churches', church, {}, { availabilityResetWeek: week });
   }
-  private async ask(church: Row, resend = false) {
+  private async ask(church: Row) {
     const week = weekDate(church, this.service.now());
-    for (const driver of await this.service.rows('Drivers', church)) {
-      if (driver.isActive?.toLowerCase() === 'false' || !driver.discordId || driver.respondedWeek === week || (!resend && driver.askedWeek === week)) continue;
-      try {
-        await this.isMember(church, driver.discordId);
-        const message = await this.dm(driver.discordId, `[${church.churchName} — ${week}] Hi ${driver.name}! Can you drive this Sunday? Reply YES or NO. No reply by Sat 11:45am = we assume NO. Use Discord’s Reply action on THIS message if you belong to multiple churches.`);
-        await this.service.patch('Drivers', church, { driverId: driver.driverId }, { askedWeek: week, askMessageId: message.id });
-      } catch (error) { this.report(`Driver ask (${church.churchId}/${driver.driverId})`, error); }
-    }
+    if (church.driverAskMessageId && church.driverAskWeek === week) return;
+    if (!church.driverAskMessageTemplate?.trim()) throw new InputError('Set driverAskMessageTemplate in Churches before posting.');
+    const channel = await this.channel(church, church.driverAskChannelId, 'driver ask');
+    const message = await channel.send({ content: church.driverAskMessageTemplate.replaceAll('{churchName}', church.churchName).replaceAll('{weekDate}', week), allowedMentions: { parse: [] } });
+    await this.service.patch('Churches', church, {}, { driverAskMessageId: message.id, driverAskWeek: week });
   }
   async tick() {
     if (this.ticking) return;

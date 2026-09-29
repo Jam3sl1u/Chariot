@@ -48,7 +48,7 @@ async function main() {
 }
 
 function church(churchId: string, churchName: string): Row {
-  return { churchId, churchName, discordGuildId: 'test-guild', weeklyPostChannelId: 'test-channel', driverAskChannelId: 'test-driver-channel', timezone: 'America/Los_Angeles', weeklySendDay: 'Wednesday', weeklySendTime: '09:00', weeklyMessageTemplate: 'Test', registrationDmTemplate: '', activeMessageId: '', activeWeekDate: '', availabilityResetWeek: '', assignmentCompletedWeek: '' };
+  return { churchId, churchName, discordGuildId: 'test-guild', weeklyPostChannelId: 'test-channel', driverAskChannelId: 'test-driver-channel', driverRoleId: 'test-drivers-role', timezone: 'America/Los_Angeles', weeklySendDay: 'Wednesday', weeklySendTime: '09:00', weeklyMessageTemplate: 'Test', driverAskMessageTemplate: 'Drivers: react if you can drive this Sunday.', registrationDmTemplate: '', activeMessageId: '', activeWeekDate: '', driverAskMessageId: '', driverAskWeek: '', availabilityResetWeek: '', assignmentCompletedWeek: '' };
 }
 function member(churchId: string, memberId: string, name: string, zone: string): Row {
   return { churchId, memberId, name, discordId: `test-${memberId}`, zone, createdAt: DateTime.utc().toISO()!, phone: '', preferences: '', notificationPreference: 'DISCORD_DM' };

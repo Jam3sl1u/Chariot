@@ -82,8 +82,15 @@ directly in the sheet by supplying name, a valid phone, and zone; it then become
 eligible even if the status cell is left as `PENDING`.
 
 `Members.zone` stores the chosen `Zones.zoneName`, not `zoneId`. Names within a
-church should be unique. `driverAskChannelId` remains part of the base Church
-configuration; the MVP asks drivers privately by DM instead of posting in that channel.
+church should be unique. `driverRoleId` is the Discord **Drivers** role that the bot
+grants to a member who volunteers during registration; configure the channel so that
+role can see and send messages. `driverAskChannelId` identifies the drivers channel.
+Churches may share that channel, but each gets a weekly ask post saved as its
+`driverAskMessageId`. Set `driverAskMessageTemplate` for each church; it supports
+`{churchName}` and `{weekDate}`. Any reaction by an active driver on that church's
+current post means they are available; removing it, or not reacting, means unavailable.
+A member who volunteers as a driver during registration becomes active but is not
+available until they react to a weekly ask.
 
 Boolean cells are written as actual Sheets booleans. User text is written with
 `RAW` input mode so names/preferences beginning with `=` cannot become formulas.

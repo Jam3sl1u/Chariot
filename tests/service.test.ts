@@ -48,6 +48,14 @@ test('registration accepts shared zones and rejects invalid locations or phone n
   await assert.rejects(f2.service.run('guild-a', c => f2.service.register(c, 'person', { name: 'Name', phone: '2025550123', zone: 'Zone a' })), /US phone/);
   assert.equal(f2.db.writes.length, 0);
 });
+test('a member can volunteer as an active driver without being available this week', async () => {
+  const f = fixture();
+  await f.service.run('guild-a', c => f.service.register(c, 'person', {
+    name: 'Volunteer', phone: '+12025550123', zone: 'Zone a', isDriver: 'true', seatsAvailable: '4',
+  }));
+  assert.equal(f.db.data.Members.length, 1);
+  assert.deepEqual(f.db.data.Drivers.map(d => [d.memberId, d.name, d.homeZone, d.seatsAvailable, d.isActive, d.isAvailableThisWeek]), [[f.db.data.Members[0].memberId, 'Volunteer', 'Zone a', '4', 'true', 'false']]);
+});
 test('a pending profile completed manually in the Sheet becomes eligible for a ride', async () => {
   const f = fixture();
   f.db.data.Members.push({ memberId: 'pending-member', churchId: 'a', discordId: 'person', profileStatus: 'PENDING', name: 'Manual Member', phone: '+12025550123', zone: 'Zone a', createdAt: '', preferences: '', notificationPreference: '' });

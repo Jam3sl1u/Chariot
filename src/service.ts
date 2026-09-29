@@ -34,6 +34,10 @@ export class Service {
     const churches = await this.churches();
     return this.unique(churches.filter(r => r.discordGuildId === guildId && r.activeMessageId === messageId), `weekly message: ${guildId}/${messageId}`);
   }
+  async resolveDriverAskMessage(guildId: string, messageId: string) {
+    const churches = await this.churches();
+    return this.unique(churches.filter(r => r.discordGuildId === guildId && r.driverAskMessageId === messageId), `driver ask: ${guildId}/${messageId}`);
+  }
   async resolveChurch(churchId: string) {
     return this.unique((await this.churches()).filter(r => r.churchId === churchId), `church: ${churchId}`);
   }
@@ -53,6 +57,9 @@ export class Service {
   }
   runMessage<T>(guildId: string, messageId: string, work: (church: Row) => Promise<T>): Promise<T | undefined> {
     return this.queue(() => this.resolveMessage(guildId, messageId), work);
+  }
+  runDriverAskMessage<T>(guildId: string, messageId: string, work: (church: Row) => Promise<T>): Promise<T | undefined> {
+    return this.queue(() => this.resolveDriverAskMessage(guildId, messageId), work);
   }
   runChurch<T>(churchId: string, work: (church: Row) => Promise<T>): Promise<T | undefined> {
     return this.queue(() => this.resolveChurch(churchId), work);
@@ -98,6 +105,8 @@ export class Service {
   }
   async register(church: Row, discordId: string, data: Row) {
     if (!data.name?.trim() || !validPhone(data.phone)) throw new InputError('Enter your name and a US phone number such as +12025550123.');
+    const seats = Number(data.seatsAvailable);
+    if (data.isDriver === 'true' && (!Number.isInteger(seats) || seats < 1 || seats > 20)) throw new InputError('Volunteer drivers must enter a whole number of seats from 1 to 20.');
     const zones = await this.rows('Zones', church);
     if (data.zone !== 'Other / Not Listed' && !zones.some(z => z.zoneName === data.zone)) throw new InputError('That pickup location is no longer available. Run /register again.');
     const allMembers = (await this.db.read('Members')).rows;
@@ -111,7 +120,22 @@ export class Service {
       name: data.name.trim(), phone: data.phone, preferences: data.preferences ?? '', zone: data.zone, notificationPreference: 'DISCORD_DM',
       profileStatus: 'COMPLETE',
     });
-    return this.localMember(profileChurch, discordId);
+    const member = await this.localMember(profileChurch, discordId);
+    if (data.isDriver === 'true') {
+      const drivers = (await this.rows('Drivers', profileChurch)).filter(driver => driver.discordId === discordId);
+      if (drivers.length > 1) throw new InputError('Duplicate driver rows; contact an admin.');
+      const values = {
+        driverId: drivers[0]?.driverId || randomUUID(), memberId: member!.memberId, name: member!.name, discordId,
+        seatsAvailable: String(seats), homeZone: member!.zone, isActive: 'true', isAvailableThisWeek: 'false',
+        availabilityWeek: '', askedWeek: '', askMessageId: '', respondedWeek: '',
+      };
+      if (drivers[0]) await this.patch('Drivers', profileChurch, { driverId: drivers[0].driverId }, values);
+      else {
+        if (!await this.resolveChurch(profileChurch.churchId)) throw new InputError('Church configuration changed. Please try again.');
+        await this.db.save('Drivers', { ...values, churchId: profileChurch.churchId });
+      }
+    }
+    return member;
   }
   async request(church: Row, discordId: string, week: string) {
     let member = await this.localMember(church, discordId);
@@ -149,5 +173,14 @@ export class Service {
     if (drivers.length !== 1) throw new InputError('This availability prompt is expired or ambiguous. Ask an admin to resend it.');
     await this.patch('Drivers', church, { driverId: drivers[0].driverId }, { isAvailableThisWeek: String(answer), availabilityWeek: week, respondedWeek: week });
     return answer ? (late(church, this.now()) ? 'Availability saved. The assignment time has passed; an admin must arrange any late placement.' : "Got it — you're confirmed as a driver this Sunday. Thanks!") : 'Got it — marked you as unavailable this Sunday. React ✅ in Discord if you need a ride!';
+  }
+  async driverReaction(church: Row, discordId: string, messageId: string, added: boolean) {
+    const week = weekDate(church, this.now());
+    if (church.driverAskMessageId !== messageId || church.driverAskWeek !== week) return;
+    const drivers = (await this.rows('Drivers', church)).filter(d => d.discordId === discordId && d.isActive?.toLowerCase() !== 'false');
+    if (drivers.length !== 1) throw new InputError('Only active drivers for this church can respond to this availability post.');
+    await this.patch('Drivers', church, { driverId: drivers[0].driverId }, {
+      isAvailableThisWeek: String(added), availabilityWeek: week, respondedWeek: added ? week : '',
+    });
   }
 }
