@@ -14,8 +14,7 @@ export class Service {
   constructor(readonly db: Storage, readonly now: () => DateTime = () => DateTime.utc()) {}
 
   async churches() { return (await this.db.read('Churches')).rows.filter(r => r.churchId); }
-  private async unique(matches: Row[], route: string) {
-    const churches = await this.churches();
+  private unique(matches: Row[], route: string, churches: Row[]) {
     if (matches.length !== 1 || churches.filter(r => r.churchId === matches[0]?.churchId).length !== 1) {
       console.warn(`Dropped unmapped/ambiguous ${route}`);
       return undefined;
@@ -24,22 +23,23 @@ export class Service {
   }
   async resolve(guildId: string) {
     const churches = await this.churches();
-    return this.unique(churches.filter(r => r.discordGuildId === guildId), `guild: ${guildId}`);
+    return this.unique(churches.filter(r => r.discordGuildId === guildId), `guild: ${guildId}`, churches);
   }
   async resolveChannel(guildId: string, channelId: string) {
     const churches = await this.churches();
-    return this.unique(churches.filter(r => r.discordGuildId === guildId && r.weeklyPostChannelId === channelId), `channel: ${guildId}/${channelId}`);
+    return this.unique(churches.filter(r => r.discordGuildId === guildId && r.weeklyPostChannelId === channelId), `channel: ${guildId}/${channelId}`, churches);
   }
   async resolveMessage(guildId: string, messageId: string) {
     const churches = await this.churches();
-    return this.unique(churches.filter(r => r.discordGuildId === guildId && r.activeMessageId === messageId), `weekly message: ${guildId}/${messageId}`);
+    return this.unique(churches.filter(r => r.discordGuildId === guildId && r.activeMessageId === messageId), `weekly message: ${guildId}/${messageId}`, churches);
   }
   async resolveDriverAskMessage(guildId: string, messageId: string) {
     const churches = await this.churches();
-    return this.unique(churches.filter(r => r.discordGuildId === guildId && r.driverAskMessageId === messageId), `driver ask: ${guildId}/${messageId}`);
+    return this.unique(churches.filter(r => r.discordGuildId === guildId && r.driverAskMessageId === messageId), `driver ask: ${guildId}/${messageId}`, churches);
   }
   async resolveChurch(churchId: string) {
-    return this.unique((await this.churches()).filter(r => r.churchId === churchId), `church: ${churchId}`);
+    const churches = await this.churches();
+    return this.unique(churches.filter(r => r.churchId === churchId), `church: ${churchId}`, churches);
   }
   private queue<T>(resolve: () => Promise<Row | undefined>, work: (church: Row) => Promise<T>): Promise<T | undefined> {
     const task = this.tail.then(async () => {

@@ -175,3 +175,23 @@ test('ask broadcasts run only in the driver channel and post broadcasts only in 
   await assert.rejects(post.d.bot.runBroadcast('guild-a', 'drivers-a', 'sunday'), /a, b: you ran this in a channel ending …\S+, but a "post" broadcast must be run in the weekly rides channel \(weeklyPostChannelId …\S+\)/);
   assert.equal(post.d.channels.get('channel-a')!.sent.length + post.d.channels.get('drivers-a')!.sent.length, 0);
 });
+
+test('if saving a new post fails, the just-sent message is deleted so no orphan is left', async () => {
+  const { f, d, run } = setup();
+  const save = f.db.save.bind(f.db);
+  f.db.save = async (tab, row, index) => { if (tab === 'Churches') throw Object.assign(new Error('quota'), { status: 429 }); return save(tab, row, index); };
+  const lines = (await run()).join('\n');
+  const channel = d.channels.get('channel-a')!;
+  assert.match(lines, /a: FAILED — rate limited \(HTTP 429\): Google Sheets allows only about 60 requests a minute/);
+  assert.equal(channel.sent.length, 2, 'greeting plus the attempted post');
+  assert.equal(channel.history.size, 1, 'only the greeting remains; the unsaved post was removed');
+  assert.equal(f.db.data.Churches.find(c => c.churchId === 'a')!.activeMessageId, '');
+});
+
+test('if the greeting cannot be saved it is removed and the run stops before any church', async () => {
+  const { f, d, run } = setup();
+  const save = f.db.save.bind(f.db);
+  f.db.save = async (tab, row, index) => { if (tab === 'Broadcasts') throw Object.assign(new Error('quota'), { status: 429 }); return save(tab, row, index); };
+  await assert.rejects(run(), /the greeting was posted but could not be saved to the Sheet, so it was removed — rate limited \(HTTP 429\).*Nothing else was changed\./);
+  assert.equal(d.channels.get('channel-a')!.history.size, 0);
+});

@@ -131,7 +131,12 @@ Rules:
   channel ending …4321`. An ID ending in `000` gets a hint that the cell was probably rounded
   (format the column as Plain text and re-enter it).
 - It stops at the first church that fails and reports each church's result, with the Discord or
-  HTTP error code when there is one. Re-running is safe:
+  HTTP error code when there is one.
+- Google Sheets allows about 60 requests a minute, and a broadcast makes several per church. The
+  Sheets layer retries rate limits (HTTP 429) with backoff, so a broadcast can take a minute or
+  two. If a message is posted but the Sheet can't record it, the bot deletes that message again
+  rather than leave a post the Sheet doesn't know about. If a run still reports a 429, wait a
+  minute and re-run. Re-running is safe:
   it replaces what was posted and posts what wasn't.
 - `/rides post` and `/rides ask-drivers` are unchanged: they still skip a church that already
   has this week's message.

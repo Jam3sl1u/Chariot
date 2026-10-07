@@ -30,8 +30,26 @@ function cell(name: string, value: string): string | boolean {
   return value;
 }
 
+/** Google quotas (about 60 reads and 60 writes per minute) are bursty for this bot: back off and retry. */
+const RETRYABLE = new Set([429, 500, 502, 503, 504]);
+const statusOf = (error: unknown) => {
+  const details = error && typeof error === 'object' ? error as { status?: unknown; code?: unknown } : {};
+  return Number(typeof details.status === 'number' ? details.status : details.code);
+};
+
 export class Sheets implements Storage {
-  constructor(private api: sheets_v4.Sheets, private sheetId: string) {}
+  /** `retryBaseMs` is the first backoff delay; tests pass 0. */
+  constructor(private api: sheets_v4.Sheets, private sheetId: string, private retryBaseMs = 2000) {}
+
+  private async retry<T>(work: () => Promise<T>): Promise<T> {
+    for (let attempt = 0; ; attempt++) {
+      try { return await work(); }
+      catch (error) {
+        if (attempt >= 5 || !RETRYABLE.has(statusOf(error))) throw error;
+        await new Promise(resolve => setTimeout(resolve, Math.min(this.retryBaseMs * 2 ** attempt, 20_000) + Math.random() * this.retryBaseMs / 2));
+      }
+    }
+  }
 
   static connect(sheetId: string, keyFile: string) {
     const credentials = new auth.GoogleAuth({ keyFile, scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
@@ -39,7 +57,7 @@ export class Sheets implements Storage {
   }
 
   async read(tab: Tab): Promise<Table> {
-    const result = await this.api.spreadsheets.values.get({ spreadsheetId: this.sheetId, range: `'${tab}'!A:AZ`, valueRenderOption: 'UNFORMATTED_VALUE' });
+    const result = await this.retry(() => this.api.spreadsheets.values.get({ spreadsheetId: this.sheetId, range: `'${tab}'!A:AZ`, valueRenderOption: 'UNFORMATTED_VALUE' }));
     const [first = [], ...values] = result.data.values ?? [];
     const headers = first.map(String);
     if (new Set(headers).size !== headers.length || !headers.includes(sharedKey[tab] ?? 'churchId')) throw new Error(`Invalid ${tab} headers`);
@@ -52,18 +70,18 @@ export class Sheets implements Storage {
     for (const tab of Object.keys(columns) as Tab[]) {
       const { headers } = await this.read(tab);
       const missing = columns[tab].filter(name => !headers.includes(name));
-      if (missing.length) await this.api.spreadsheets.values.update({ spreadsheetId: this.sheetId, range: `'${tab}'!${col(headers.length)}1`, valueInputOption: 'RAW', requestBody: { values: [missing] } });
+      if (missing.length) await this.retry(() => this.api.spreadsheets.values.update({ spreadsheetId: this.sheetId, range: `'${tab}'!${col(headers.length)}1`, valueInputOption: 'RAW', requestBody: { values: [missing] } }));
     }
   }
 
   // The one tab setup creates itself: it has no pre-existing data to preserve.
   private async ensureTab(tab: Tab) {
-    const { data } = await this.api.spreadsheets.get({ spreadsheetId: this.sheetId, fields: 'sheets.properties.title' });
+    const { data } = await this.retry(() => this.api.spreadsheets.get({ spreadsheetId: this.sheetId, fields: 'sheets.properties.title' }));
     if (!data.sheets?.some(sheet => sheet.properties?.title === tab)) {
-      await this.api.spreadsheets.batchUpdate({ spreadsheetId: this.sheetId, requestBody: { requests: [{ addSheet: { properties: { title: tab } } }] } });
+      await this.retry(() => this.api.spreadsheets.batchUpdate({ spreadsheetId: this.sheetId, requestBody: { requests: [{ addSheet: { properties: { title: tab } } }] } }));
     }
-    const first = await this.api.spreadsheets.values.get({ spreadsheetId: this.sheetId, range: `'${tab}'!1:1` });
-    if (!first.data.values?.[0]?.length) await this.api.spreadsheets.values.update({ spreadsheetId: this.sheetId, range: `'${tab}'!A1`, valueInputOption: 'RAW', requestBody: { values: [[...columns[tab]]] } });
+    const first = await this.retry(() => this.api.spreadsheets.values.get({ spreadsheetId: this.sheetId, range: `'${tab}'!1:1` }));
+    if (!first.data.values?.[0]?.length) await this.retry(() => this.api.spreadsheets.values.update({ spreadsheetId: this.sheetId, range: `'${tab}'!A1`, valueInputOption: 'RAW', requestBody: { values: [[...columns[tab]]] } }));
   }
 
   async save(tab: Tab, row: Row, index?: number) {
@@ -71,10 +89,10 @@ export class Sheets implements Storage {
     const { headers } = await this.read(tab);
     for (const name of Object.keys(row)) if (!headers.includes(name)) throw new Error(`Missing ${tab}.${name}; run setup:sheets`);
     if (index === undefined) {
-      await this.api.spreadsheets.values.append({ spreadsheetId: this.sheetId, range: `'${tab}'!A:${col(headers.length - 1)}`, valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: [headers.map(name => cell(name, row[name] ?? ''))] } });
+      await this.retry(() => this.api.spreadsheets.values.append({ spreadsheetId: this.sheetId, range: `'${tab}'!A:${col(headers.length - 1)}`, valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: [headers.map(name => cell(name, row[name] ?? ''))] } }));
     } else {
       // Only patch named cells: retain admin-managed values, formulas and unknown columns.
-      await this.api.spreadsheets.values.batchUpdate({ spreadsheetId: this.sheetId, requestBody: { valueInputOption: 'RAW', data: Object.entries(row).map(([name, value]) => ({ range: `'${tab}'!${col(headers.indexOf(name))}${index + 2}`, values: [[cell(name, value)]] })) } });
+      await this.retry(() => this.api.spreadsheets.values.batchUpdate({ spreadsheetId: this.sheetId, requestBody: { valueInputOption: 'RAW', data: Object.entries(row).map(([name, value]) => ({ range: `'${tab}'!${col(headers.indexOf(name))}${index + 2}`, values: [[cell(name, value)]] })) } }));
     }
   }
 }

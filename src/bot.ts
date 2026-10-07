@@ -53,6 +53,7 @@ export class Bot {
   private describe(error: unknown) {
     if (error instanceof InputError) return error.message;
     const details = error && typeof error === 'object' ? error as { code?: unknown; status?: unknown } : {};
+    if (details.status === 429 || Number(details.code) === 429) return 'rate limited (HTTP 429): Google Sheets allows only about 60 requests a minute and the bot retried but was still over the limit. Wait a minute, then re-run';
     const codes = [typeof details.code === 'number' || typeof details.code === 'string' ? `Discord/Node code ${details.code}` : '', typeof details.status === 'number' ? `HTTP ${details.status}` : ''].filter(Boolean).join(', ');
     return `unexpected failure${codes ? ` (${codes})` : ''}. Check that the bot can view, send and read history in that channel and still has access to the Sheet; see the Render logs`;
   }
@@ -316,7 +317,8 @@ export class Bot {
     if (!church.weeklyMessageTemplate?.trim()) throw new InputError('Set weeklyMessageTemplate in Churches before posting.');
     const channel = await this.channel(church);
     const message = await channel.send({ content: church.weeklyMessageTemplate, allowedMentions: { parse: [] } });
-    await this.service.patch('Churches', church, {}, { activeMessageId: message.id, activeWeekDate: week });
+    try { await this.service.patch('Churches', church, {}, { activeMessageId: message.id, activeWeekDate: week }); }
+    catch (error) { await this.deleteOwned(channel, message.id); throw error; } // never leave a live-looking post the Sheet doesn't know about
     if (!current) return { replaced: false, removed: true, cleared: 0 };
     const removed = await this.deleteOwned(channel, church.activeMessageId);
     return { replaced: true, removed, cleared: await this.service.cancelWeekRequests(church, week) };
@@ -379,7 +381,8 @@ export class Bot {
     if (!church.driverAskMessageTemplate?.trim()) throw new InputError('Set driverAskMessageTemplate in Churches before posting.');
     const channel = await this.channel(church, church.driverAskChannelId, 'driver ask');
     const message = await channel.send({ content: church.driverAskMessageTemplate.replaceAll('{churchName}', church.churchName).replaceAll('{weekDate}', week), allowedMentions: { parse: [] } });
-    await this.service.patch('Churches', church, {}, { driverAskMessageId: message.id, driverAskWeek: week });
+    try { await this.service.patch('Churches', church, {}, { driverAskMessageId: message.id, driverAskWeek: week }); }
+    catch (error) { await this.deleteOwned(channel, message.id); throw error; }
     if (!current) return { replaced: false, removed: true, cleared: 0 };
     const removed = await this.deleteOwned(channel, church.driverAskMessageId);
     return { replaced: true, removed, cleared: await this.service.resetWeekDrivers(church, week) };
@@ -413,14 +416,20 @@ export class Bot {
       let greeting: Awaited<ReturnType<typeof channel.send>>;
       try { greeting = await channel.send({ content: spec.greeting.replaceAll('{weekDate}', week), allowedMentions: { parse: [] } }); }
       catch (error) { this.report(`Broadcast ${spec.id} greeting`, error); throw new InputError(`Broadcast "${spec.id}" did not run: could not post the greeting in the channel ending ${tail(targetOf(churches[0]))} — ${this.describe(error)}. Nothing was changed.`); }
-      await this.service.patchBroadcast(spec.id, { greetingMessageId: greeting.id, greetingWeek: week });
+      try { await this.service.patchBroadcast(spec.id, { greetingMessageId: greeting.id, greetingWeek: week }); }
+      catch (error) {
+        await this.deleteOwned(channel, greeting.id);
+        this.report(`Broadcast ${spec.id} greeting save`, error);
+        throw new InputError(`Broadcast "${spec.id}" did not run: the greeting was posted but could not be saved to the Sheet, so it was removed — ${this.describe(error)}. Nothing else was changed.`);
+      }
       const gone = previous ? await this.deleteOwned(channel, previous) : true;
       const lines = [`Greeting posted${previous ? (gone ? ' (replaced the previous one)' : ' (the previous one could not be deleted)') : ''}.`];
       for (const church of churches) {
         try {
           const result = await this.service.runChurch(church.churchId, async current => {
             if (spec.type === 'post') return this.post(current, true);
-            await this.reset(current);
+            // A replace resets every driver itself; the gentler reset is only for a first post.
+            if (!(current.driverAskMessageId && current.driverAskWeek === week)) await this.reset(current);
             return this.ask(current, true);
           });
           if (!result) throw new InputError('Church configuration changed.');

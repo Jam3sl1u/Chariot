@@ -36,3 +36,24 @@ test('Zones is the one shared table and does not require churchId', async () => 
   await f.db.save('Zones', { zoneId: 'mesa', zoneName: 'Mesa Court', zonePriorityOrder: '1' });
   assert.deepEqual(f.calls[0].requestBody, { values: [['mesa', 'Mesa Court', '1']] });
 });
+
+test('Sheets retries rate limits with backoff but not other errors', async () => {
+  let reads = 0; let failures = 2;
+  const api = { spreadsheets: { values: { get: async () => {
+    reads++;
+    if (failures-- > 0) throw Object.assign(new Error('quota'), { status: 429, code: 429 });
+    return { data: { values: [['churchId', 'name'], ['a', 'One']] } };
+  } } } } as unknown as sheets_v4.Sheets;
+  const table = await new Sheets(api, 'test-sheet', 0).read('Members');
+  assert.equal(reads, 3); assert.deepEqual(table.rows, [{ churchId: 'a', name: 'One' }]);
+
+  let forbidden = 0;
+  const denied = { spreadsheets: { values: { get: async () => { forbidden++; throw Object.assign(new Error('no'), { status: 403 }); } } } } as unknown as sheets_v4.Sheets;
+  await assert.rejects(new Sheets(denied, 'test-sheet', 0).read('Members'), /no/);
+  assert.equal(forbidden, 1, 'permission errors are not retried');
+
+  let always = 0;
+  const limited = { spreadsheets: { values: { get: async () => { always++; throw Object.assign(new Error('quota'), { status: 429 }); } } } } as unknown as sheets_v4.Sheets;
+  await assert.rejects(new Sheets(limited, 'test-sheet', 0).read('Members'), /quota/);
+  assert.equal(always, 6, 'one try plus five retries, then the error surfaces');
+});
