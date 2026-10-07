@@ -50,14 +50,28 @@ export function broadcastProblems(spec: BroadcastSpec, churches: Row[], ctx: Bro
   }
   const channelField = spec.type === 'post' ? 'weeklyPostChannelId' : 'driverAskChannelId';
   const templateField = spec.type === 'post' ? 'weeklyMessageTemplate' : 'driverAskMessageTemplate';
+  // Churches sharing the same wrong value are reported together, so a wrong-channel run is one line.
+  const guilds = new Map<string, string[]>();
+  for (const church of churches) if (church.discordGuildId !== ctx.guildId) guilds.set(church.discordGuildId ?? '', [...(guilds.get(church.discordGuildId ?? '') ?? []), church.churchId]);
+  for (const [value, ids] of guilds) {
+    problems.push(`${ids.join(', ')}: discordGuildId is ${tail(value)}, but you ran this in a server ending ${tail(ctx.guildId)}. Run this in the right server, or fix the discordGuildId cell${ids.length === churches.length ? '' : ` for ${ids.length === 1 ? ids[0] : 'these churches'}`}.${looksRounded(value) ? ' It ends in 000, so the cell may have been rounded; format the column as Plain text and re-enter it.' : ''}`);
+  }
+  // "post" runs only in the weekly rides channel; "ask" runs only in the driver channel.
+  const where = new Map<string, string[]>();
+  for (const church of churches) {
+    const required = spec.type === 'post' ? church.weeklyPostChannelId : church.driverAskChannelId;
+    if (required === ctx.channelId) continue;
+    const rule = spec.type === 'post'
+      ? `a "post" broadcast must be run in the weekly rides channel (weeklyPostChannelId ${tail(required)})`
+      : `an "ask" broadcast must be run in the driver channel (driverAskChannelId ${tail(required)})`;
+    where.set(rule, [...(where.get(rule) ?? []), church.churchId]);
+  }
+  for (const [rule, ids] of where) {
+    const rounded = churches.some(church => ids.includes(church.churchId) && looksRounded(spec.type === 'post' ? church.weeklyPostChannelId : church.driverAskChannelId));
+    problems.push(`${ids.join(', ')}: you ran this in a channel ending ${tail(ctx.channelId)}, but ${rule}. Run it there, or fix that cell in the Churches tab.${rounded ? ' The channel ID ends in 000, so the cell may have been rounded; format the column as Plain text and re-enter it.' : ''}`);
+  }
   for (const church of churches) {
     const id = church.churchId;
-    if (church.discordGuildId !== ctx.guildId) {
-      problems.push(`${id}: discordGuildId is ${tail(church.discordGuildId)}, but you ran this in a server ending ${tail(ctx.guildId)}. Set ${id}'s discordGuildId in the Churches tab to match the other churches${looksRounded(church.discordGuildId) ? ' (it ends in 000, so the cell may have been rounded; format the column as Plain text and re-enter it)' : ''}.`);
-    }
-    if (church.weeklyPostChannelId !== ctx.channelId) {
-      problems.push(`${id}: weeklyPostChannelId is ${tail(church.weeklyPostChannelId)}, but you ran this in a channel ending ${tail(ctx.channelId)}. A broadcast runs in the shared rides channel; fix ${id}'s weeklyPostChannelId or run it in the channel ${id} uses${looksRounded(church.weeklyPostChannelId) ? ' (it ends in 000, so the cell may have been rounded; format the column as Plain text and re-enter it)' : ''}.`);
-    }
     if (spec.type === 'ask' && church !== first && church[channelField] !== first[channelField]) {
       problems.push(`${id}: ${channelField} is ${tail(church[channelField])} but ${first.churchId}'s is ${tail(first[channelField])}. Every church in a "${spec.type}" broadcast must use the same ${channelField}.`);
     }

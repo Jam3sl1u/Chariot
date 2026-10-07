@@ -10,7 +10,7 @@ function setup(type: 'post' | 'ask' = 'post') {
   f.db.data.Broadcasts.push({ broadcastId: 'sunday', type, churches: 'a, b', greeting: 'Good morning! Week of {weekDate}', greetingMessageId: '', greetingWeek: '' });
   const d = discordFixture(f);
   for (const channel of d.channels.values()) channel.history.clear();
-  const run = (name = 'sunday') => d.bot.runBroadcast('guild-a', 'channel-a', name);
+  const run = (name = 'sunday') => d.bot.runBroadcast('guild-a', type === 'post' ? 'channel-a' : 'drivers-a', name);
   return { f, d, run };
 }
 const church = (f: ReturnType<typeof fixture>, id: string) => f.db.data.Churches.find(row => row.churchId === id)!;
@@ -121,9 +121,9 @@ test('validation reports every problem at once, naming the church, field and wha
   const lines = error.message.split('\n');
   assert.match(lines[0], /did not run — 3 problems to fix, and nothing was posted or deleted/);
   assert.equal(lines.length, 4);
-  assert.match(error.message, /• b: discordGuildId is …here, but you ran this in a server ending …\S+\. Set b's discordGuildId in the Churches tab/);
-  assert.match(error.message, /• b: weeklyPostChannelId is …0000, but you ran this in a channel ending …\S+/);
-  assert.match(error.message, /it ends in 000, so the cell may have been rounded; format the column as Plain text/);
+  assert.match(error.message, /• b: discordGuildId is …here, but you ran this in a server ending …\S+\. Run this in the right server, or fix the discordGuildId cell for b\./);
+  assert.match(error.message, /• b: you ran this in a channel ending …\S+, but a "post" broadcast must be run in the weekly rides channel \(weeklyPostChannelId …0000\)\. Run it there, or fix that cell/);
+  assert.match(error.message, /The channel ID ends in 000, so the cell may have been rounded; format the column as Plain text/);
   assert.match(error.message, /• b: weeklyMessageTemplate is blank/);
   assert.doesNotMatch(error.message, /guild-elsewhere/, 'full IDs are never echoed');
   assert.equal(d.channels.get('channel-a')!.sent.length, 0);
@@ -148,4 +148,30 @@ test('a church that fails mid-run gets a specific FAILED line', async () => {
   channel.send = async payload => { if (++calls === 3) throw Object.assign(new Error('x'), { code: 50013 }); return send(payload); };
   const lines = (await run()).join('\n');
   assert.match(lines, /b: FAILED — unexpected failure \(Discord\/Node code 50013\)\..*Stopped before the remaining churches; fix that and re-run/);
+});
+
+test('running in the wrong channel is one line naming every church', async () => {
+  const { d, run } = setup();
+  const error = await d.bot.runBroadcast('guild-a', 'some-other-channel', 'sunday').then(() => undefined, (e: Error) => e);
+  assert.ok(error);
+  assert.equal(error.message.split('\n').length, 2);
+  assert.match(error.message, /did not run — 1 problem to fix/);
+  assert.match(error.message, /• a, b: you ran this in a channel ending …\S+, but a "post" broadcast must be run in the weekly rides channel \(weeklyPostChannelId …\S+\)\./);
+  assert.equal(d.channels.get('channel-a')!.sent.length, 0);
+  assert.ok(run);
+});
+
+test('ask broadcasts run only in the driver channel and post broadcasts only in the rides channel', async () => {
+  const ask = setup('ask');
+  await assert.rejects(ask.d.bot.runBroadcast('guild-a', 'channel-a', 'sunday'), /a, b: you ran this in a channel ending …\S+, but an "ask" broadcast must be run in the driver channel \(driverAskChannelId …\S+\)\. Run it there, or fix that cell/);
+  await assert.rejects(ask.d.bot.runBroadcast('guild-a', 'random', 'sunday'), /an "ask" broadcast must be run in the driver channel/);
+  assert.equal(ask.d.channels.get('drivers-a')!.sent.length + ask.d.channels.get('channel-a')!.sent.length, 0);
+  const lines = await ask.d.bot.runBroadcast('guild-a', 'drivers-a', 'sunday');
+  assert.match(lines.join('\n'), /a: posted\./);
+  assert.equal(ask.d.channels.get('drivers-a')!.sent.length, 3, 'greeting and both asks go to the driver channel');
+  assert.equal(ask.d.channels.get('channel-a')!.sent.length, 0);
+
+  const post = setup('post');
+  await assert.rejects(post.d.bot.runBroadcast('guild-a', 'drivers-a', 'sunday'), /a, b: you ran this in a channel ending …\S+, but a "post" broadcast must be run in the weekly rides channel \(weeklyPostChannelId …\S+\)/);
+  assert.equal(post.d.channels.get('channel-a')!.sent.length + post.d.channels.get('drivers-a')!.sent.length, 0);
 });

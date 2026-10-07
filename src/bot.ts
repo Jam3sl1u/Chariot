@@ -182,9 +182,10 @@ export class Bot {
         recognized = true;
         if (i.isChatInputCommand()) {
           if (i.commandName !== 'rides') return;
-          if (church.discordGuildId !== i.guildId || church.weeklyPostChannelId !== i.channelId) throw new InputError('Use this command in the shared rides channel with a configured church ID.');
-          if (!i.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) throw new InputError('Manage Server permission is required.');
           const sub = i.options.getSubcommand();
+          const home = sub === 'ask-drivers' ? church.driverAskChannelId : church.weeklyPostChannelId;
+          if (church.discordGuildId !== i.guildId || home !== i.channelId) throw new InputError(sub === 'ask-drivers' ? 'Use /rides ask-drivers in the driver channel (driverAskChannelId) with a configured church ID.' : 'Use this command in the shared rides channel (weeklyPostChannelId) with a configured church ID.');
+          if (!i.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) throw new InputError('Manage Server permission is required.');
           try {
             if (sub === 'post') await this.post(church);
             if (sub === 'sync') await this.reconcile(church);

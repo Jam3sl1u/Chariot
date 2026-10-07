@@ -112,9 +112,11 @@ subcommand. It is an addition to PRD §29, not part of it.
 
 Rules:
 
-- Run it as an admin (Manage Server) in the shared rides channel. Every listed church must
-  use that guild and channel, and for `ask` the same `driverAskChannelId`. The greeting goes
-  to the channel the church messages go to.
+- Run it as an admin (Manage Server). **`post` runs only in the shared rides channel**
+  (`weeklyPostChannelId`) and **`ask` runs only in the driver channel** (`driverAskChannelId`).
+  Every listed church must use that guild and the same channel for its type. The greeting goes
+  to that same channel. `/rides post` and `/rides sync` also require the rides channel, and
+  `/rides ask-drivers` requires the driver channel.
 - Everything is validated before anything is sent: type, churches, templates
   (`weeklyMessageTemplate` or `driverAskMessageTemplate`), one service week, and that
   `assignmentCompletedWeek` is not set for any listed church.
@@ -224,7 +226,7 @@ below mean the coming local service Sunday, not today's date.
    Re-add it: the same A request becomes PENDING. Reactions to unrelated or
    previous-week messages do nothing.
 3. **Driver replies:** seed driver rows for the same Discord account in both
-   churches; run `/rides ask-drivers church:church-a` and then `church:church-b`.
+   churches; run `/rides ask-drivers church:church-a` and then `church:church-b` in the driver channel.
    Expect two labeled DMs, FALSE default,
    and distinct saved ask IDs. Send bare `YES`: the bot must ask you to select a
    prompt. Reply `yes` to A's ask: only A becomes TRUE. Reply `maybe`: error and no
