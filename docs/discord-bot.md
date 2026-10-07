@@ -123,7 +123,13 @@ Rules:
   `PENDING` ride requests become `CANCELLED` (rows are kept; reacting to the new post
   restores the same request). For `ask`, every driver's availability for the week is reset to
   FALSE. Reactions on deleted posts no longer count. Don't re-run after assignments have run.
-- It stops at the first church that fails and reports each church's result. Re-running is safe:
+- If anything is wrong, it posts nothing and replies with **every** problem at once, one line each,
+  naming the church, the cell to fix, and what it found versus expected. IDs are shown as only
+  their last four digits, for example `b: weeklyPostChannelId is …0000, but you ran this in a
+  channel ending …4321`. An ID ending in `000` gets a hint that the cell was probably rounded
+  (format the column as Plain text and re-enter it).
+- It stops at the first church that fails and reports each church's result, with the Discord or
+  HTTP error code when there is one. Re-running is safe:
   it replaces what was posted and posts what wasn't.
 - `/rides post` and `/rides ask-drivers` are unchanged: they still skip a church that already
   has this week's message.

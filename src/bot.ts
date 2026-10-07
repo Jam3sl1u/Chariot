@@ -8,7 +8,7 @@ import {
 import { randomUUID } from 'node:crypto';
 import type { Row } from './sheets.js';
 import { Service, InputError, validPhone } from './service.js';
-import { parseBroadcast } from './broadcast.js';
+import { broadcastProblems, parseBroadcast, tail } from './broadcast.js';
 import { localTime, weekDate, weeklyDue } from './time.js';
 
 export const commands = [
@@ -48,6 +48,13 @@ export class Bot {
     const code = typeof details.code === 'number' || typeof details.code === 'string' ? `; code ${details.code}` : '';
     const status = typeof details.status === 'number' ? `; HTTP ${details.status}` : '';
     console.error(`${context}: operation failed; check configuration, permissions and connectivity${code}${status}`);
+  }
+  /** Admin-facing reason for a failure: our own messages as written, otherwise the safe error codes only. */
+  private describe(error: unknown) {
+    if (error instanceof InputError) return error.message;
+    const details = error && typeof error === 'object' ? error as { code?: unknown; status?: unknown } : {};
+    const codes = [typeof details.code === 'number' || typeof details.code === 'string' ? `Discord/Node code ${details.code}` : '', typeof details.status === 'number' ? `HTTP ${details.status}` : ''].filter(Boolean).join(', ');
+    return `unexpected failure${codes ? ` (${codes})` : ''}. Check that the bot can view, send and read history in that channel and still has access to the Sheet; see the Render logs`;
   }
   private async dm(userId: string, content: string, components: ActionRowBuilder<ButtonBuilder>[] = []) {
     return (await this.client.users.fetch(userId)).send({ content, components, allowedMentions: { parse: [] } });
@@ -382,30 +389,29 @@ export class Bot {
    * greeting and church messages for the week. Stops at the first failing church.
    */
   async runBroadcast(guildId: string, channelId: string, name: string) {
-    const rows = (await this.service.broadcasts()).filter(row => row.broadcastId.trim() === name.trim());
-    if (rows.length !== 1) throw new InputError(rows.length ? `Broadcast "${name}" is listed more than once in the Broadcasts tab.` : `No broadcast named "${name}" in the Broadcasts tab.`);
+    const all = await this.service.broadcasts();
+    const rows = all.filter(row => row.broadcastId.trim() === name.trim());
+    if (rows.length !== 1) throw new InputError(rows.length ? `Broadcast "${name}" is listed ${rows.length} times in the Broadcasts tab; each broadcastId must be unique.` : `No broadcast named "${name}" in the Broadcasts tab. ${all.length ? `Available: ${all.map(row => row.broadcastId.trim()).join(', ')}.` : 'The tab has no broadcasts yet.'}`);
     const spec = parseBroadcast(rows[0]);
-    if (this.broadcasting.has(spec.id)) throw new InputError('That broadcast is already running.');
+    if (this.broadcasting.has(spec.id)) throw new InputError(`Broadcast "${spec.id}" is already running; wait for it to finish.`);
     this.broadcasting.add(spec.id);
     try {
       const churches: Row[] = [];
+      const problems: string[] = [];
       for (const id of spec.churchIds) {
         const church = await this.service.resolveChurch(id);
-        if (!church) throw new InputError(`Church ${id} must appear exactly once in the Churches tab.`);
-        churches.push(church);
+        if (church) churches.push(church);
+        else problems.push(`${id}: must appear exactly once in the Churches tab's churchId column (check spelling and capitalization, and for duplicates).`);
       }
+      if (!problems.length) problems.push(...broadcastProblems(spec, churches, { guildId, channelId, weekOf: church => weekDate(church, this.service.now()) }));
+      if (problems.length) throw new InputError(`Broadcast "${spec.id}" did not run — ${problems.length} problem${problems.length === 1 ? '' : 's'} to fix, and nothing was posted or deleted:\n${problems.map(line => `• ${line}`).join('\n')}`);
       const week = weekDate(churches[0], this.service.now());
       const targetOf = (church: Row) => spec.type === 'post' ? church.weeklyPostChannelId : church.driverAskChannelId;
-      for (const church of churches) {
-        if (church.discordGuildId !== guildId || church.weeklyPostChannelId !== channelId) throw new InputError(`Run this in the shared rides channel; ${church.churchId} is configured for a different server or channel.`);
-        if (targetOf(church) !== targetOf(churches[0])) throw new InputError(`All churches in a broadcast must use the same ${spec.type === 'post' ? 'weekly post' : 'driver ask'} channel.`);
-        if (weekDate(church, this.service.now()) !== week) throw new InputError(`${church.churchId} is in a different service week than ${churches[0].churchId}.`);
-        if (church.assignmentCompletedWeek === week) throw new InputError(`Assignments have already run for ${church.churchId} this week; broadcast refused.`);
-        if (!(spec.type === 'post' ? church.weeklyMessageTemplate : church.driverAskMessageTemplate)?.trim()) throw new InputError(`Set ${spec.type === 'post' ? 'weeklyMessageTemplate' : 'driverAskMessageTemplate'} for ${church.churchId} first.`);
-      }
       const channel = await this.channel(churches[0], targetOf(churches[0]), 'broadcast');
       const previous = spec.row.greetingWeek === week ? spec.row.greetingMessageId : '';
-      const greeting = await channel.send({ content: spec.greeting.replaceAll('{weekDate}', week), allowedMentions: { parse: [] } });
+      let greeting: Awaited<ReturnType<typeof channel.send>>;
+      try { greeting = await channel.send({ content: spec.greeting.replaceAll('{weekDate}', week), allowedMentions: { parse: [] } }); }
+      catch (error) { this.report(`Broadcast ${spec.id} greeting`, error); throw new InputError(`Broadcast "${spec.id}" did not run: could not post the greeting in the channel ending ${tail(targetOf(churches[0]))} — ${this.describe(error)}. Nothing was changed.`); }
       await this.service.patchBroadcast(spec.id, { greetingMessageId: greeting.id, greetingWeek: week });
       const gone = previous ? await this.deleteOwned(channel, previous) : true;
       const lines = [`Greeting posted${previous ? (gone ? ' (replaced the previous one)' : ' (the previous one could not be deleted)') : ''}.`];
@@ -421,7 +427,7 @@ export class Bot {
           lines.push(`${church.churchId}: ${result.replaced ? `replaced previous ${spec.type === 'post' ? 'post' : 'ask'} (${result.cleared} ${noun})` : 'posted'}${result.removed ? '' : '; the old message could not be deleted'}.`);
         } catch (error) {
           this.report(`Broadcast ${spec.id} (${church.churchId})`, error);
-          lines.push(`${church.churchId}: FAILED${error instanceof InputError ? ` — ${error.message}` : ''}. Stopped; re-run to retry.`);
+          lines.push(`${church.churchId}: FAILED — ${this.describe(error)}. Stopped before the remaining churches; fix that and re-run (churches already posted are replaced, the rest are posted).`);
           break;
         }
       }

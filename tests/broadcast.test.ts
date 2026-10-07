@@ -68,8 +68,8 @@ test('ask broadcasts replace the driver ask and reset availability', async () =>
 
 test('invalid broadcasts are rejected before anything is sent or deleted', async () => {
   for (const [change, message] of [
-    [{ type: 'both' }, /type must be/], [{ churches: '' }, /at least one church/], [{ churches: 'a, a' }, /listed twice/],
-    [{ greeting: '  ' }, /greeting is empty/], [{ churches: 'a, nope' }, /nope must appear exactly once/],
+    [{ type: 'both' }, /type must be "post" or "ask", but it is "both"/], [{ churches: '' }, /churches cell is empty/], [{ churches: 'a, a' }, /listed twice/],
+    [{ greeting: '  ' }, /greeting cell is empty/], [{ churches: 'a, nope' }, /nope: must appear exactly once/],
   ] as const) {
     const { f, d, run } = setup();
     Object.assign(f.db.data.Broadcasts[0], change);
@@ -77,17 +77,17 @@ test('invalid broadcasts are rejected before anything is sent or deleted', async
     assert.equal(d.channels.get('channel-a')!.sent.length, 0);
   }
   const wrongGuild = setup(); wrongGuild.f.b.discordGuildId = 'guild-other';
-  await assert.rejects(wrongGuild.run(), /different server or channel/);
+  await assert.rejects(wrongGuild.run(), /b: discordGuildId is …ther, but you ran this in a server ending …\S+/);
   const noTemplate = setup(); noTemplate.f.b.weeklyMessageTemplate = '';
-  await assert.rejects(noTemplate.run(), /weeklyMessageTemplate for b/);
+  await assert.rejects(noTemplate.run(), /b: weeklyMessageTemplate is blank/);
   const noAsk = setup('ask'); noAsk.f.a.driverAskMessageTemplate = '';
-  await assert.rejects(noAsk.run(), /driverAskMessageTemplate for a/);
+  await assert.rejects(noAsk.run(), /a: driverAskMessageTemplate is blank/);
   const split = setup('ask'); split.f.b.driverAskChannelId = 'drivers-b';
-  await assert.rejects(split.run(), /same driver ask channel/);
+  await assert.rejects(split.run(), /b: driverAskChannelId is …\S+ but a's is …\S+/);
   const closed = setup(); closed.f.b.assignmentCompletedWeek = '2026-09-27';
-  await assert.rejects(closed.run(), /already run for b/);
+  await assert.rejects(closed.run(), /b: assignmentCompletedWeek is already 2026-09-27/);
   const unknown = setup();
-  await assert.rejects(unknown.run('missing'), /No broadcast named "missing"/);
+  await assert.rejects(unknown.run('missing'), /No broadcast named "missing".*Available: sunday\./);
   for (const t of [wrongGuild, noTemplate, noAsk, split, closed, unknown]) assert.equal([...t.d.channels.values()].reduce((n, c) => n + c.sent.length, 0), 0);
 });
 
@@ -98,7 +98,7 @@ test('a failing church stops the run, is reported, and a re-run completes it', a
   let calls = 0;
   channel.send = async payload => { if (++calls === 3) throw new Error('boom'); return send(payload); };
   const lines = await run();
-  assert.match(lines.join('\n'), /a: posted\.\nb: FAILED\. Stopped; re-run to retry\./);
+  assert.match(lines.join('\n'), /a: posted\.\nb: FAILED — unexpected failure\. Check that the bot/);
   assert.ok(church(f, 'a').activeMessageId); assert.equal(church(f, 'b').activeMessageId, '');
   channel.send = send;
   const retry = await run();
@@ -111,4 +111,41 @@ test('a broadcast cannot run twice at once', async () => {
   const first = run();
   await assert.rejects(run(), /already running/);
   await first;
+});
+
+test('validation reports every problem at once, naming the church, field and what to change', async () => {
+  const { f, d, run } = setup();
+  f.b.discordGuildId = 'guild-elsewhere'; f.b.weeklyPostChannelId = 'channel-1000000000000000000'; f.b.weeklyMessageTemplate = '';
+  const error = await run().then(() => undefined, (e: Error) => e);
+  assert.ok(error);
+  const lines = error.message.split('\n');
+  assert.match(lines[0], /did not run — 3 problems to fix, and nothing was posted or deleted/);
+  assert.equal(lines.length, 4);
+  assert.match(error.message, /• b: discordGuildId is …here, but you ran this in a server ending …\S+\. Set b's discordGuildId in the Churches tab/);
+  assert.match(error.message, /• b: weeklyPostChannelId is …0000, but you ran this in a channel ending …\S+/);
+  assert.match(error.message, /it ends in 000, so the cell may have been rounded; format the column as Plain text/);
+  assert.match(error.message, /• b: weeklyMessageTemplate is blank/);
+  assert.doesNotMatch(error.message, /guild-elsewhere/, 'full IDs are never echoed');
+  assert.equal(d.channels.get('channel-a')!.sent.length, 0);
+});
+
+test('an invalid timezone is reported as a timezone problem', async () => {
+  const { f, run } = setup();
+  f.b.timezone = '';
+  await assert.rejects(run(), /b: timezone is blank or not a valid IANA name/);
+});
+
+test('a Discord failure on the greeting says what failed and that nothing changed', async () => {
+  const { f, d, run } = setup();
+  d.channels.get('channel-a')!.send = async () => { throw Object.assign(new Error('x'), { code: 50013 }); };
+  await assert.rejects(run(), /could not post the greeting in the channel ending …\S+ — unexpected failure \(Discord\/Node code 50013\)\. Check that the bot can view, send and read history.*Nothing was changed\./);
+  assert.equal(f.db.data.Broadcasts[0].greetingMessageId, '');
+});
+
+test('a church that fails mid-run gets a specific FAILED line', async () => {
+  const { d, run } = setup();
+  const channel = d.channels.get('channel-a')!; const send = channel.send; let calls = 0;
+  channel.send = async payload => { if (++calls === 3) throw Object.assign(new Error('x'), { code: 50013 }); return send(payload); };
+  const lines = (await run()).join('\n');
+  assert.match(lines, /b: FAILED — unexpected failure \(Discord\/Node code 50013\)\..*Stopped before the remaining churches; fix that and re-run/);
 });
