@@ -95,6 +95,39 @@ available until they react to a weekly ask.
 Boolean cells are written as actual Sheets booleans. User text is written with
 `RAW` input mode so names/preferences beginning with `=` cannot become formulas.
 
+## Broadcasts (one command for a greeting plus every church's message)
+
+`/rides broadcast name:<broadcastId>` posts a greeting and then one message per church, in
+order, using a row of the `Broadcasts` tab. `npm run setup:sheets` creates the tab (with its
+headers) if it is missing. Restart the bot once after updating so Discord registers the new
+subcommand. It is an addition to PRD §29, not part of it.
+
+| Column | Who sets it | Meaning |
+|---|---|---|
+| `broadcastId` | Admin | The name typed in the command; must be unique. |
+| `type` | Admin | `post` posts each church's weekly ride request (ride to church). `ask` posts each church's driver ask (drive to church). One broadcast is all one type. |
+| `churches` | Admin | Comma-separated `churchId`s, posted in this order, e.g. `CH01, CH02`. |
+| `greeting` | Admin | Posted first (max 2000 characters). `{weekDate}` becomes the service Sunday. |
+| `greetingMessageId`, `greetingWeek` | Bot | Which greeting is live, so a re-run can delete it. |
+
+Rules:
+
+- Run it as an admin (Manage Server) in the shared rides channel. Every listed church must
+  use that guild and channel, and for `ask` the same `driverAskChannelId`. The greeting goes
+  to the channel the church messages go to.
+- Everything is validated before anything is sent: type, churches, templates
+  (`weeklyMessageTemplate` or `driverAskMessageTemplate`), one service week, and that
+  `assignmentCompletedWeek` is not set for any listed church.
+- **Re-running replaces the whole block.** For each church the new message goes live first, then
+  the old one is deleted, and the old greeting is deleted too. For `post`, that week's
+  `PENDING` ride requests become `CANCELLED` (rows are kept; reacting to the new post
+  restores the same request). For `ask`, every driver's availability for the week is reset to
+  FALSE. Reactions on deleted posts no longer count. Don't re-run after assignments have run.
+- It stops at the first church that fails and reports each church's result. Re-running is safe:
+  it replaces what was posted and posts what wasn't.
+- `/rides post` and `/rides ask-drivers` are unchanged: they still skip a church that already
+  has this week's message.
+
 ## Saturday assignment Apps Script
 
 The standalone script is [apps-script/Code.gs](../apps-script/Code.gs). In the
@@ -213,6 +246,12 @@ below mean the coming local service Sunday, not today's date.
 8. **DM failure:** disable server DMs on a test user, then react to a weekly post.
    No registration or ride request is created. Re-enable DMs and retry the reaction;
    then retry driver prompts with `/rides ask-drivers`.
+9. **Broadcast:** add a `Broadcasts` row (`type` `post`, `churches` both test church IDs, a
+   greeting with `{weekDate}`) and run `/rides broadcast name:<id>` in the shared channel as an
+   admin. Expect the greeting, then church A's post, then church B's. React to both, then run
+   it again: the first block disappears, a new block appears, both requests become CANCELLED,
+   and a fresh reaction restores them. Repeat with `type` `ask` (drivers' availability resets
+   to FALSE). A non-admin cannot run it.
 
 Automated checks: `npm run typecheck` and `npm test` (Node's built-in test runner,
 no Jest/Playwright infrastructure). They use in-memory Sheets/Discord doubles;

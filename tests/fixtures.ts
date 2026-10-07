@@ -33,10 +33,10 @@ export function discordFixture(f: ReturnType<typeof fixture>) {
   const replies: string[] = [];
   const roleGrants: { user: string; role: string }[] = [];
   const channels = new Map<string, ReturnType<typeof makeChannel>>();
-  function makeMessage(id: string, channelId: string, embeds: unknown[] = []) {
+  function makeMessage(id: string, channelId: string, history: Collection<string, { id: string }>, embeds: unknown[] = [], content = '') {
     const reactions = new Collection<string, { emoji: { name: string }; users: { fetch: (options: { after?: string }) => Promise<Collection<string, { id: string; bot: boolean }>> } }>();
     return {
-      id, channelId, author: { id: 'bot' }, embeds, createdTimestamp: f.service.now().toMillis(), reactions: { cache: reactions },
+      id, channelId, content, author: { id: 'bot' }, embeds, delete: async () => { history.delete(id); }, createdTimestamp: f.service.now().toMillis(), reactions: { cache: reactions },
       react: async (emoji: string) => { if (!reactions.has(emoji)) setUsers(emoji, []); },
       setUsers,
     };
@@ -57,13 +57,13 @@ export function discordFixture(f: ReturnType<typeof fixture>) {
         if (!message) throw { code: 10008 };
         return message;
       } },
-      send: async (payload: { embeds?: unknown[]; content?: string }) => { const m = makeMessage(`sent-${++sequence}`, id, payload.embeds); history.set(m.id, m); sent.push(m); return m; },
+      send: async (payload: { embeds?: unknown[]; content?: string }) => { const m = makeMessage(`sent-${++sequence}`, id, history, payload.embeds, payload.content); history.set(m.id, m); sent.push(m); return m; },
     };
   }
   for (const c of [f.a, f.b]) {
     let channel = channels.get(c.weeklyPostChannelId);
     if (!channel) { channel = makeChannel(c.weeklyPostChannelId, c.discordGuildId); channels.set(channel.id, channel); }
-    channel.history.set(c.activeMessageId, makeMessage(c.activeMessageId, channel.id));
+    channel.history.set(c.activeMessageId, makeMessage(c.activeMessageId, channel.id, channel.history));
     if (!channels.has(c.driverAskChannelId)) channels.set(c.driverAskChannelId, makeChannel(c.driverAskChannelId, c.discordGuildId));
   }
   const client = {

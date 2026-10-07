@@ -8,6 +8,7 @@ import {
 import { randomUUID } from 'node:crypto';
 import type { Row } from './sheets.js';
 import { Service, InputError, validPhone } from './service.js';
+import { parseBroadcast } from './broadcast.js';
 import { localTime, weekDate, weeklyDue } from './time.js';
 
 export const commands = [
@@ -16,7 +17,8 @@ export const commands = [
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addSubcommand(s => s.setName('post').setDescription('Post the current weekly ride request').addStringOption(o => o.setName('church').setDescription('Church ID').setRequired(true)))
     .addSubcommand(s => s.setName('sync').setDescription('Reconcile reactions on the current post').addStringOption(o => o.setName('church').setDescription('Church ID').setRequired(true)))
-    .addSubcommand(s => s.setName('ask-drivers').setDescription('Ask drivers who have not replied this week').addStringOption(o => o.setName('church').setDescription('Church ID').setRequired(true))),
+    .addSubcommand(s => s.setName('ask-drivers').setDescription('Ask drivers who have not replied this week').addStringOption(o => o.setName('church').setDescription('Church ID').setRequired(true)))
+    .addSubcommand(s => s.setName('broadcast').setDescription('Post a greeting and one message per church from the Broadcasts tab').addStringOption(o => o.setName('name').setDescription('Broadcast ID').setRequired(true))),
 ].map(c => c.toJSON());
 
 type Registration = { churchId: string; userId: string; expires: number; data: Row; zones: string[] };
@@ -36,6 +38,7 @@ export class Bot {
   private timer?: ReturnType<typeof setInterval>;
   private ticking = false;
   private initializedGuilds = new Set<string>();
+  private broadcasting = new Set<string>();
   constructor(readonly client: Client, readonly service: Service) {}
 
   private report(context: string, error: unknown) {
@@ -147,6 +150,12 @@ export class Bot {
         await i.showModal(this.modal(churchId)); return;
       }
       await i.deferReply({ flags: MessageFlags.Ephemeral });
+      if (i.isChatInputCommand() && i.commandName === 'rides' && i.options.getSubcommand() === 'broadcast') {
+        if (!i.guildId || !i.channelId) throw new InputError('Use this command in the shared rides channel.');
+        if (!i.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) throw new InputError('Manage Server permission is required.');
+        await i.editReply((await this.runBroadcast(i.guildId, i.channelId, i.options.getString('name', true))).join('\n'));
+        return;
+      }
       let churchId: string | undefined;
       if (i.isChatInputCommand()) {
         if (!i.guildId || !i.channelId) throw new InputError('Use this command in the shared rides channel.');
@@ -278,13 +287,31 @@ export class Bot {
     }
   }
 
-  async post(church: Row) {
+  /** Deletes a message this bot sent. True when it is gone; false when it could not be removed. */
+  private async deleteOwned(channel: Awaited<ReturnType<Bot['channel']>>, messageId: string) {
+    try {
+      const message = await channel.messages.fetch(messageId);
+      if (message.author.id !== this.client.user?.id) return false;
+      await message.delete();
+      return true;
+    } catch (error) { return !!error && typeof error === 'object' && (error as { code?: unknown }).code === 10008; }
+  }
+  /**
+   * Posts the church's weekly ride request. Without `replace`, an existing post for the week
+   * is kept. With it, the new post goes live first, then the old one is deleted and this
+   * week's pending requests are cancelled, since their reactions went with the old post.
+   */
+  async post(church: Row, replace = false) {
     const week = weekDate(church, this.service.now());
-    if (church.activeMessageId && church.activeWeekDate === week) return;
+    const current = !!church.activeMessageId && church.activeWeekDate === week;
+    if (current && !replace) return { replaced: false, removed: true, cleared: 0 };
     if (!church.weeklyMessageTemplate?.trim()) throw new InputError('Set weeklyMessageTemplate in Churches before posting.');
     const channel = await this.channel(church);
     const message = await channel.send({ content: church.weeklyMessageTemplate, allowedMentions: { parse: [] } });
     await this.service.patch('Churches', church, {}, { activeMessageId: message.id, activeWeekDate: week });
+    if (!current) return { replaced: false, removed: true, cleared: 0 };
+    const removed = await this.deleteOwned(channel, church.activeMessageId);
+    return { replaced: true, removed, cleared: await this.service.cancelWeekRequests(church, week) };
   }
   async reconcile(church: Row) {
     const week = weekDate(church, this.service.now());
@@ -336,13 +363,70 @@ export class Bot {
     }
     await this.service.patch('Churches', church, {}, { availabilityResetWeek: week });
   }
-  private async ask(church: Row) {
+  /** Posts the driver ask. `replace` swaps in a fresh post and resets drivers, like `post` does for riders. */
+  private async ask(church: Row, replace = false) {
     const week = weekDate(church, this.service.now());
-    if (church.driverAskMessageId && church.driverAskWeek === week) return;
+    const current = !!church.driverAskMessageId && church.driverAskWeek === week;
+    if (current && !replace) return { replaced: false, removed: true, cleared: 0 };
     if (!church.driverAskMessageTemplate?.trim()) throw new InputError('Set driverAskMessageTemplate in Churches before posting.');
     const channel = await this.channel(church, church.driverAskChannelId, 'driver ask');
     const message = await channel.send({ content: church.driverAskMessageTemplate.replaceAll('{churchName}', church.churchName).replaceAll('{weekDate}', week), allowedMentions: { parse: [] } });
     await this.service.patch('Churches', church, {}, { driverAskMessageId: message.id, driverAskWeek: week });
+    if (!current) return { replaced: false, removed: true, cleared: 0 };
+    const removed = await this.deleteOwned(channel, church.driverAskMessageId);
+    return { replaced: true, removed, cleared: await this.service.resetWeekDrivers(church, week) };
+  }
+  /**
+   * Runs one Broadcasts row: a greeting, then one post (or driver ask) per listed church.
+   * Everything is validated before anything is sent. Re-running replaces the previous
+   * greeting and church messages for the week. Stops at the first failing church.
+   */
+  async runBroadcast(guildId: string, channelId: string, name: string) {
+    const rows = (await this.service.broadcasts()).filter(row => row.broadcastId.trim() === name.trim());
+    if (rows.length !== 1) throw new InputError(rows.length ? `Broadcast "${name}" is listed more than once in the Broadcasts tab.` : `No broadcast named "${name}" in the Broadcasts tab.`);
+    const spec = parseBroadcast(rows[0]);
+    if (this.broadcasting.has(spec.id)) throw new InputError('That broadcast is already running.');
+    this.broadcasting.add(spec.id);
+    try {
+      const churches: Row[] = [];
+      for (const id of spec.churchIds) {
+        const church = await this.service.resolveChurch(id);
+        if (!church) throw new InputError(`Church ${id} must appear exactly once in the Churches tab.`);
+        churches.push(church);
+      }
+      const week = weekDate(churches[0], this.service.now());
+      const targetOf = (church: Row) => spec.type === 'post' ? church.weeklyPostChannelId : church.driverAskChannelId;
+      for (const church of churches) {
+        if (church.discordGuildId !== guildId || church.weeklyPostChannelId !== channelId) throw new InputError(`Run this in the shared rides channel; ${church.churchId} is configured for a different server or channel.`);
+        if (targetOf(church) !== targetOf(churches[0])) throw new InputError(`All churches in a broadcast must use the same ${spec.type === 'post' ? 'weekly post' : 'driver ask'} channel.`);
+        if (weekDate(church, this.service.now()) !== week) throw new InputError(`${church.churchId} is in a different service week than ${churches[0].churchId}.`);
+        if (church.assignmentCompletedWeek === week) throw new InputError(`Assignments have already run for ${church.churchId} this week; broadcast refused.`);
+        if (!(spec.type === 'post' ? church.weeklyMessageTemplate : church.driverAskMessageTemplate)?.trim()) throw new InputError(`Set ${spec.type === 'post' ? 'weeklyMessageTemplate' : 'driverAskMessageTemplate'} for ${church.churchId} first.`);
+      }
+      const channel = await this.channel(churches[0], targetOf(churches[0]), 'broadcast');
+      const previous = spec.row.greetingWeek === week ? spec.row.greetingMessageId : '';
+      const greeting = await channel.send({ content: spec.greeting.replaceAll('{weekDate}', week), allowedMentions: { parse: [] } });
+      await this.service.patchBroadcast(spec.id, { greetingMessageId: greeting.id, greetingWeek: week });
+      const gone = previous ? await this.deleteOwned(channel, previous) : true;
+      const lines = [`Greeting posted${previous ? (gone ? ' (replaced the previous one)' : ' (the previous one could not be deleted)') : ''}.`];
+      for (const church of churches) {
+        try {
+          const result = await this.service.runChurch(church.churchId, async current => {
+            if (spec.type === 'post') return this.post(current, true);
+            await this.reset(current);
+            return this.ask(current, true);
+          });
+          if (!result) throw new InputError('Church configuration changed.');
+          const noun = spec.type === 'post' ? 'requests cancelled' : 'drivers reset';
+          lines.push(`${church.churchId}: ${result.replaced ? `replaced previous ${spec.type === 'post' ? 'post' : 'ask'} (${result.cleared} ${noun})` : 'posted'}${result.removed ? '' : '; the old message could not be deleted'}.`);
+        } catch (error) {
+          this.report(`Broadcast ${spec.id} (${church.churchId})`, error);
+          lines.push(`${church.churchId}: FAILED${error instanceof InputError ? ` — ${error.message}` : ''}. Stopped; re-run to retry.`);
+          break;
+        }
+      }
+      return lines;
+    } finally { this.broadcasting.delete(spec.id); }
   }
   async tick() {
     if (this.ticking) return;

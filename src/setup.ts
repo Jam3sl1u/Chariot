@@ -4,6 +4,6 @@ import { Sheets } from './sheets.js';
 async function main() {
   const env = sheetConfig();
   await Sheets.connect(env.sheetId, env.keyPath).initialize();
-  console.log('Required headers added. Configure each church’s driverRoleId, timezone, weeklySendDay, weeklySendTime, weeklyMessageTemplate, driverAskMessageTemplate, and optional registrationDmTemplate.');
+  console.log('Required headers added (and the Broadcasts tab created if it was missing). Configure each church’s driverRoleId, timezone, weeklySendDay, weeklySendTime, weeklyMessageTemplate, driverAskMessageTemplate, and optional registrationDmTemplate.');
 }
 main().catch(() => { console.error('Sheet setup failed. Check credentials, sharing, and existing tab/header names.'); process.exitCode = 1; });

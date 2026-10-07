@@ -64,6 +64,36 @@ export class Service {
   runChurch<T>(churchId: string, work: (church: Row) => Promise<T>): Promise<T | undefined> {
     return this.queue(() => this.resolveChurch(churchId), work);
   }
+  /** Runs one unit of work in the same single-writer queue as every other bot write. */
+  exclusive<T>(work: () => Promise<T>): Promise<T> {
+    const task = this.tail.then(work);
+    this.tail = task.catch(() => undefined);
+    return task;
+  }
+  async broadcasts() { return (await this.db.read('Broadcasts')).rows.filter(r => r.broadcastId?.trim()); }
+  patchBroadcast(broadcastId: string, values: Row) {
+    return this.exclusive(async () => {
+      const matches = (await this.db.read('Broadcasts')).rows.map((row, i) => ({ row, i })).filter(({ row }) => row.broadcastId?.trim() === broadcastId);
+      if (matches.length !== 1) throw new InputError('That broadcast changed or was removed. Please try again.');
+      await this.db.save('Broadcasts', values, matches[0].i);
+    });
+  }
+  /** Cancels (never deletes) the week's pending requests; a fresh reaction restores one to PENDING. */
+  async cancelWeekRequests(church: Row, week: string) {
+    const pending = (await this.rows('RideRequests', church)).filter(r => r.weekDate === week && r.status === 'PENDING');
+    for (const ride of pending) await this.patch('RideRequests', church, { requestId: ride.requestId }, { status: 'CANCELLED' });
+    return pending.length;
+  }
+  /** Sets every driver unavailable for the week; returns how many had said yes. */
+  async resetWeekDrivers(church: Row, week: string) {
+    let cleared = 0;
+    for (const driver of await this.rows('Drivers', church)) {
+      if (driver.isAvailableThisWeek?.toLowerCase() === 'true' && driver.availabilityWeek === week) cleared++;
+      await this.patch('Drivers', church, { driverId: driver.driverId }, { isAvailableThisWeek: 'false', availabilityWeek: week, respondedWeek: '', askedWeek: '', askMessageId: '' });
+    }
+    await this.patch('Churches', church, {}, { availabilityResetWeek: week });
+    return cleared;
+  }
   async rows(tab: Tab, church: Row) {
     const rows = (await this.db.read(tab)).rows;
     return tab === 'Zones' ? rows : rows.filter(r => r.churchId === church.churchId);

@@ -9,8 +9,11 @@ export const columns = {
   Zones: ['zoneId', 'zoneName', 'zonePriorityOrder'],
   RideRequests: ['requestId', 'churchId', 'weekDate', 'memberId', 'status', 'hasPlusOne', 'plusOneName', 'plusOnePhone', 'plusOnePromptId'],
   Assignments: ['weekDate', 'churchId', 'driverId', 'memberId', 'seatPosition', 'notified', 'unassignedReason', 'assignmentStatus'],
+  Broadcasts: ['broadcastId', 'type', 'churches', 'greeting', 'greetingMessageId', 'greetingWeek'],
 } as const;
 export type Tab = keyof typeof columns;
+/** Tabs that are not scoped to one church, keyed by their own identifier column. */
+const sharedKey: Partial<Record<Tab, string>> = { Zones: 'zoneId', Broadcasts: 'broadcastId' };
 export interface Table { headers: string[]; rows: Row[] }
 export interface Storage {
   read(tab: Tab): Promise<Table>;
@@ -39,12 +42,13 @@ export class Sheets implements Storage {
     const result = await this.api.spreadsheets.values.get({ spreadsheetId: this.sheetId, range: `'${tab}'!A:AZ`, valueRenderOption: 'UNFORMATTED_VALUE' });
     const [first = [], ...values] = result.data.values ?? [];
     const headers = first.map(String);
-    if (new Set(headers).size !== headers.length || (tab === 'Zones' ? !headers.includes('zoneId') : !headers.includes('churchId'))) throw new Error(`Invalid ${tab} headers`);
+    if (new Set(headers).size !== headers.length || !headers.includes(sharedKey[tab] ?? 'churchId')) throw new Error(`Invalid ${tab} headers`);
     return { headers, rows: values.map(cells => Object.fromEntries(headers.map((name, i) => [name, String(cells[i] ?? '')]))) };
   }
 
   // Explicit setup command only: append missing headers without moving existing columns/data.
   async initialize() {
+    await this.ensureTab('Broadcasts');
     for (const tab of Object.keys(columns) as Tab[]) {
       const { headers } = await this.read(tab);
       const missing = columns[tab].filter(name => !headers.includes(name));
@@ -52,8 +56,18 @@ export class Sheets implements Storage {
     }
   }
 
+  // The one tab setup creates itself: it has no pre-existing data to preserve.
+  private async ensureTab(tab: Tab) {
+    const { data } = await this.api.spreadsheets.get({ spreadsheetId: this.sheetId, fields: 'sheets.properties.title' });
+    if (!data.sheets?.some(sheet => sheet.properties?.title === tab)) {
+      await this.api.spreadsheets.batchUpdate({ spreadsheetId: this.sheetId, requestBody: { requests: [{ addSheet: { properties: { title: tab } } }] } });
+    }
+    const first = await this.api.spreadsheets.values.get({ spreadsheetId: this.sheetId, range: `'${tab}'!1:1` });
+    if (!first.data.values?.[0]?.length) await this.api.spreadsheets.values.update({ spreadsheetId: this.sheetId, range: `'${tab}'!A1`, valueInputOption: 'RAW', requestBody: { values: [[...columns[tab]]] } });
+  }
+
   async save(tab: Tab, row: Row, index?: number) {
-    if (tab !== 'Zones' && !row.churchId) throw new Error('Every write requires churchId');
+    if (!sharedKey[tab] && !row.churchId) throw new Error('Every write requires churchId');
     const { headers } = await this.read(tab);
     for (const name of Object.keys(row)) if (!headers.includes(name)) throw new Error(`Missing ${tab}.${name}; run setup:sheets`);
     if (index === undefined) {
