@@ -32,6 +32,7 @@ function interactions(d: ReturnType<typeof discordFixture>) {
     shown, replies, text, nextId,
     button: (user: string, customId: string) => run({ ...base(user), customId, isButton: () => true }),
     modal: (user: string, customId: string, fields: Record<string, string>) => run({ ...base(user), customId, isModalSubmit: () => true, fields: { getTextInputValue: (name: string) => fields[name] ?? '' } }),
+    command: (user: string, channelId: string, sub: string, churchId = 'a') => run({ ...base(user), isChatInputCommand: () => true, commandName: 'rides', guildId: 'guild-a', channelId, options: { getString: () => churchId, getSubcommand: () => sub }, memberPermissions: { has: () => true } }),
     select: (user: string, customId: string, value: string) => run({ ...base(user), customId, isStringSelectMenu: () => true, values: [value] }),
   };
 }
@@ -158,4 +159,17 @@ test('sync clears a driver ask whose message was deleted so it can be posted aga
   channel.history.delete(church(f, 'a').driverAskMessageId);
   await d.bot.reconcileDrivers(church(f, 'a'));
   assert.equal(church(f, 'a').driverAskMessageId, ''); assert.equal(church(f, 'a').driverAskWeek, '');
+});
+
+test('each /rides command only runs in its own channel; sync works from either', async () => {
+  const { f, d } = setup(); const ui = interactions(d);
+  await ui.command('admin', 'drivers-a', 'sync'); assert.equal(ui.text(), 'Completed.');
+  await ui.command('admin', 'channel-a', 'sync'); assert.equal(ui.text(), 'Completed.');
+  await ui.command('admin', 'random', 'sync'); assert.match(ui.text(), /rides channel \(weeklyPostChannelId\) or the driver channel \(driverAskChannelId\)/);
+  await ui.command('admin', 'channel-a', 'ask-drivers'); assert.match(ui.text(), /in the driver channel \(driverAskChannelId\)/);
+  await ui.command('admin', 'drivers-a', 'post'); assert.match(ui.text(), /shared rides channel \(weeklyPostChannelId\)/);
+  assert.equal(d.channels.get('drivers-a')!.sent.length, 0);
+  await ui.command('admin', 'drivers-a', 'ask-drivers'); assert.equal(ui.text(), 'Completed.');
+  assert.equal(d.channels.get('drivers-a')!.sent.length, 1);
+  assert.ok(church(f, 'a').driverAskMessageId);
 });

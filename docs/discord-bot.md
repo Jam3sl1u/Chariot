@@ -178,8 +178,8 @@ function dropdown to remove either control without changing rows.
 and the driver ask IDs) lives in the Sheet and survives a restart. The bot does not run
 the scheduler, post automatically, reset availability automatically, or send driver asks
 automatically. It waits for an admin command. Use `/rides post church:ID` to create the
-weekly post, `/rides sync church:ID` to catch up reactions on both the ride post and the
-driver ask, and `/rides ask-drivers church:ID` (in the driver channel) to reset drivers and
+weekly post (rides channel), `/rides sync church:ID` to catch up reactions on both the ride
+post and the driver ask (run it in either channel), and `/rides ask-drivers church:ID` (in the driver channel) to reset drivers and
 post the ask. Both commands skip a church that already has this week's message; a
 broadcast replaces it.
 
