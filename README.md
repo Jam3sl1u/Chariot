@@ -76,8 +76,10 @@ Status reflects the code on `main`. "Not built" means no code exists for it yet.
 
 - **Driver sign-up by reaction:** reacting to a driver ask now works like a ride reaction. Unregistered
   people and registered riders are walked through a short sign-up, people who already drive for another
-  church are added automatically, and only a reaction ever makes a driver available. `/rides sync`
-  also catches up driver reactions. See [docs/discord-bot.md](docs/discord-bot.md#driver-reactions-and-sign-up).
+  church are added automatically, and only a reaction ever makes a driver available. A reaction by a
+  non-driver creates a placeholder `Drivers` row (`signupStatus` PENDING, 4 seats) that sign-up completes, and
+  `Members.canDrive` flags who can drive. `/rides sync` also catches up driver reactions. Run
+  `npm run setup:sheets` before deploying, to add the two new columns. See [docs/discord-bot.md](docs/discord-bot.md#driver-reactions-and-sign-up).
 
 ## Not in the MVP (PRD §29.4)
 

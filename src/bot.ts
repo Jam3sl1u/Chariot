@@ -6,7 +6,7 @@ import {
   type User, type PartialUser,
 } from 'discord.js';
 import { randomUUID } from 'node:crypto';
-import type { Row } from './sheets.js';
+import { columns, type Row, type Tab } from './sheets.js';
 import { Service, InputError, truth, validPhone } from './service.js';
 import { broadcastProblems, parseBroadcast, tail } from './broadcast.js';
 import { localTime, weekDate, weeklyDue } from './time.js';
@@ -101,7 +101,19 @@ export class Bot {
     await this.client.login(token);
   }
   stop() { if (this.timer) clearInterval(this.timer); this.client.destroy(); }
+  /** Logs (does not stop) when a tab is missing columns this version writes, e.g. setup:sheets was not run. */
+  private async checkSheetHeaders() {
+    const missing: string[] = [];
+    for (const tab of Object.keys(columns) as Tab[]) {
+      try {
+        const { headers } = await this.service.db.read(tab);
+        for (const name of columns[tab]) if (!headers.includes(name)) missing.push(`${tab}.${name}`);
+      } catch { missing.push(`${tab} (tab missing or unreadable)`); }
+    }
+    if (missing.length) console.error(`SHEET SETUP NEEDED: missing ${missing.join(', ')}. Run "npm run setup:sheets" to add them.`);
+  }
   private async ready() {
+    await this.checkSheetHeaders();
     this.churchCache = await this.service.churches();
     for (const church of this.churchCache) {
       try { await this.service.runChurch(church.churchId, async resolved => {
@@ -138,7 +150,7 @@ export class Bot {
     return new ModalBuilder().setCustomId(`driver-seats:${churchId}`).setTitle('How many seats can you offer?').addComponents(this.field('seatsAvailable', 'Seats you can offer (1-20)', true, 2));
   }
   private surveyKey(userId: string) { return userId; }
-  private async startSurvey(church: Row, userId: string, kind: Survey['kind'] = 'rider') {
+  private async startSurvey(church: Row, userId: string, kind: Survey['kind'] = 'rider', message?: string) {
     const key = this.surveyKey(userId);
     const current = this.surveys.get(key);
     // Keep an unexpired prompt of the same kind (any church for riders, since registration is shared).
@@ -149,8 +161,8 @@ export class Bot {
       const [content, customId, label] = kind === 'rider'
         ? [(church.registrationDmTemplate?.trim() || `[${name}] Complete your registration survey before requesting a ride.`).replaceAll('{churchName}', name), `survey:${church.churchId}`, 'Start registration']
         : kind === 'driver'
-          ? [`[${name}] To drive for ${name}, complete this quick sign-up. Signing up doesn't mark you available: afterwards, react to the driver post again to confirm you're driving this week.`, `dsurvey:${church.churchId}`, 'Start driver sign-up']
-          : [`[${name}] To drive for ${name}, tell us how many seats you can offer. Afterwards, react to the driver post again to confirm you're driving this week.`, `dseats:${church.churchId}`, 'Set my seats'];
+          ? [message ?? `[${name}] To drive for ${name}, complete this quick sign-up. Signing up doesn't mark you available: afterwards, react to the driver post again to confirm you're driving this week.`, `dsurvey:${church.churchId}`, 'Start driver sign-up']
+          : [message ?? `[${name}] To drive for ${name}, tell us how many seats you can offer. Afterwards, react to the driver post again to confirm you're driving this week.`, `dseats:${church.churchId}`, 'Set my seats'];
       await this.dm(userId, content, [new ActionRowBuilder<ButtonBuilder>().addComponents(new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(ButtonStyle.Primary))]);
     } catch {
       this.surveys.delete(key);
@@ -167,9 +179,13 @@ export class Bot {
     const result = await this.service.driverReaction(church, userId, messageId, added);
     if (result.status === 'register') {
       await this.service.beginRegistration(church, userId);
+      await this.service.setCanDrive(church, userId, true);
       await this.startSurvey(church, userId, 'driver');
     } else if (result.status === 'seats') {
       await this.startSurvey(church, userId, 'seats');
+    } else if (result.status === 'applied' && result.unconfirmed) {
+      // Available on placeholder seats: say so, and ask them to confirm the real number.
+      await this.startSurvey(church, userId, 'seats', `[${church.churchName}] You're marked available as a driver this week. Please confirm how many seats you can offer so we can plan rides:`);
     } else if (result.status === 'copy') {
       // Already drives for another church: their reaction here is the opt-in, so they are available now.
       if (church.driverRoleId?.trim()) await this.grantDriverRole(church, userId);

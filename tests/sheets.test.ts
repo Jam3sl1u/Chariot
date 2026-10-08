@@ -57,3 +57,15 @@ test('Sheets retries rate limits with backoff but not other errors', async () =>
   await assert.rejects(new Sheets(limited, 'test-sheet', 0).read('Members'), /quota/);
   assert.equal(always, 6, 'one try plus five retries, then the error surfaces');
 });
+
+test('the canDrive flag is skipped when its header is missing, but a required column still fails', async () => {
+  const withoutFlag = fake(['churchId', 'discordId', 'name']);
+  await withoutFlag.db.save('Members', { churchId: 'a', discordId: '1', name: 'A', canDrive: 'true' });
+  assert.deepEqual(withoutFlag.calls[0].requestBody, { values: [['a', '1', 'A']] });
+  const withFlag = fake(['churchId', 'discordId', 'name', 'canDrive']);
+  await withFlag.db.save('Members', { churchId: 'a', discordId: '1', name: 'A', canDrive: 'true' });
+  assert.deepEqual(withFlag.calls[0].requestBody, { values: [['a', '1', 'A', true]] });
+  const noStatus = fake(['churchId', 'driverId', 'discordId']);
+  await assert.rejects(noStatus.db.save('Drivers', { churchId: 'a', driverId: 'd', discordId: '1', signupStatus: 'PENDING' }), /Missing Drivers\.signupStatus; run setup:sheets/);
+  assert.equal(noStatus.calls.length, 0);
+});

@@ -58,9 +58,11 @@ Existing columns may be reordered; code maps them by header name.
 | Churches | `activeMessageId`, `activeWeekDate`, `availabilityResetWeek` | Bot. Clears all three on every process start; dates are the service Sunday, `YYYY-MM-DD`. |
 | Churches | `assignmentCompletedWeek` | Future assignment integration, or admin after a manual assignment run. Set to the service Sunday only **after assignments have actually completed**. Leave blank for this pass. |
 | Members | `phone`, `preferences`, `notificationPreference` | Registration; preference is `DISCORD_DM` in this MVP. |
+| Members | `canDrive` | Bot, editable by admins. TRUE when the person volunteered or has a Drivers row in that church, FALSE when they registered as a rider only. Informational: nothing reads it to decide availability. |
 | RideRequests | `hasPlusOne`, `plusOneName`, `plusOnePhone`, `plusOnePromptId` | Reserved for the deferred +1 feature; the MVP does not read or write them. |
 | Drivers | `isActive` | Admin; blank/TRUE means active, FALSE disables asks/replies. |
 | Drivers | `availabilityWeek`, `askedWeek`, `askMessageId`, `respondedWeek` | Bot; scopes/reset/reply context for each week. |
+| Drivers | `signupStatus` | Bot. `PENDING` = a placeholder created by a reaction (4 seats until they finish sign-up); `COMPLETE` = they submitted the form or an admin added the row. Blank is treated as complete. Filter on `PENDING` to see who still owes a sign-up. |
 | Assignments | `unassignedReason`, `assignmentStatus` | Assignment script. Status is `ASSIGNED`, `UNASSIGNED`, or `CANCELLED`; cancelled rows remain as history but do not occupy a seat. |
 
 `Churches.churchId` must be unique. Every church row uses the same `discordGuildId` and
@@ -192,9 +194,14 @@ reaction opts out. What happens depends on who reacts:
 |---|---|
 | Active driver for this church | Marked available this week. |
 | Driver an admin turned off (`isActive` FALSE) | Told "driver access is turned off"; nothing changes. |
-| Drives for another church (active row there) | A Drivers row for this church is created with the same seats and home zone, and they are marked available immediately. |
-| Registered, not a driver anywhere | DM with a **Set my seats** button and a one-field form. Creates this church's Drivers row (home zone = their profile zone) and grants the Drivers role. **Not available** until they react again. |
-| Not registered | A PENDING member is created and a DM with **Start driver sign-up** opens the same survey as riders (seats required, driver answer implied). Creates the profile, the Drivers row and the role. **Not available** until they react again. |
+| Drives for another church (active row there) | A Drivers row for this church is created with the same seats and home zone, `COMPLETE`, and they are marked available immediately. |
+| Registered, not a driver anywhere | A **placeholder** Drivers row is created at once (`signupStatus` PENDING, **4 seats**, home zone from their profile, not available) and they get a DM with a **Set my seats** button. Submitting the form sets their real seats and marks the row `COMPLETE`, and grants the Drivers role. They react again to opt in. |
+| Not registered | A PENDING member and a **placeholder** Drivers row (4 seats, name and zone blank, not available) are created, and a DM with **Start driver sign-up** opens the same survey as riders. Finishing it fills in the profile and the row (`COMPLETE`) and grants the role. They react again to opt in. |
+
+Reacting again on a placeholder: a registered rider is marked available (on the placeholder seats, if they
+have not set their own) and is DM'd to confirm their seats. Someone who has not finished registering is
+**not** made available; they are prompted again. `canDrive` on the church's Members row is set to TRUE
+whenever a Drivers row is created or completed for them.
 
 - Removing a reaction as a non-driver does nothing and sends no message.
 - If assignments have run (`assignmentCompletedWeek` is the current service Sunday), a new
@@ -204,8 +211,12 @@ reaction opts out. What happens depends on who reacts:
   sign-up), and drivers who opted in by reaction but no longer have one become unavailable.
   Availability you set by hand in the Sheet, with `respondedWeek` blank, is not overwritten.
   If the ask message was deleted, sync clears its ID so the ask can be posted again.
-- Driver sign-up needs `driverRoleId` set for the church and **Manage Roles** for the bot; if
-  granting the role fails, no Drivers row is created.
+- Finishing sign-up needs `driverRoleId` set for the church and **Manage Roles** for the bot; if
+  granting the role fails, the row stays a placeholder.
+- **Before deploying this version, run `npm run setup:sheets`** to add `Members.canDrive` and
+  `Drivers.signupStatus`. Without `signupStatus`, driver reactions fail with "Missing
+  Drivers.signupStatus; run setup:sheets"; a missing `canDrive` is skipped silently. On startup the bot
+  logs `SHEET SETUP NEEDED: missing ...` listing any missing columns.
 - A broadcast `ask` replaces the post and resets every driver to unavailable, so reactions on
   the old post no longer count.
 
@@ -250,9 +261,12 @@ below mean the coming local service Sunday, not today's date.
    seeded driver row for church A, react to A's ask: only A becomes TRUE; remove it: FALSE. React
    to B's ask: B has no row for you, but you drive for A, so B's row appears with A's seats and
    zone and is TRUE at once. With a fresh account that has no profile, react to A's ask: you get a
-   **Start driver sign-up** DM; finish it and confirm the Drivers row and role exist and
-   availability is still FALSE; react again: TRUE. With a rider-only account, react: you get a
-   **Set my seats** DM (0 or 25 is rejected); submit it, confirm FALSE, react again: TRUE. A
+   **Start driver sign-up** DM and a PENDING placeholder Drivers row (4 seats, FALSE); react again
+   before finishing and confirm it is still FALSE. Finish the sign-up and confirm the row is COMPLETE
+   with your seats, the role exists, `canDrive` is TRUE and availability is still FALSE; react again:
+   TRUE. With a rider-only account, react: a PENDING row with 4 seats appears and you get a
+   **Set my seats** DM (0 or 25 is rejected); submit it, confirm the seats and COMPLETE, then
+   react again: TRUE. A
    non-admin cannot run `/rides ask-drivers`; re-running it for the same week does nothing.
 4. **Restart:** stop and start the bot. Confirm the Church rows keep their
    `activeMessageId`, `activeWeekDate` and driver ask IDs, and no post or driver ask occurs on
