@@ -7,6 +7,9 @@ export const validPhone = (phone: string) => /^\+1[2-9]\d{2}[2-9]\d{6}$/.test(ph
 export const yesNo = (text: string) => text.toUpperCase() === 'YES' ? true : text.toUpperCase() === 'NO' ? false : undefined;
 export const truth = (text?: string) => text?.toLowerCase() === 'true';
 export class InputError extends Error {}
+export type DriverReaction =
+  | { status: 'ignored' | 'applied' | 'register' | 'seats' }
+  | { status: 'copy'; source: Row };
 
 /** One process owns bot writes. Serializes read-modify-write operations across all guilds. */
 export class Service {
@@ -167,7 +170,8 @@ export class Service {
     }
     return member;
   }
-  async request(church: Row, discordId: string, week: string) {
+  /** This church's own Members row, created from the shared profile when the person is registered elsewhere. */
+  private async ensureLocalMember(church: Row, discordId: string) {
     let member = await this.localMember(church, discordId);
     const profile = member || await this.member(church, discordId);
     if (!member && profile) {
@@ -178,6 +182,10 @@ export class Service {
       });
       member = await this.localMember(church, discordId);
     }
+    return member;
+  }
+  async request(church: Row, discordId: string, week: string) {
+    const member = await this.ensureLocalMember(church, discordId);
     if (!member) throw new InputError('Please run /register in the church’s weekly rides channel first.');
     const requests = (await this.rows('RideRequests', church)).filter(r => r.memberId === member.memberId && r.weekDate === week);
     if (requests.length > 1) throw new InputError('Duplicate ride requests; contact an admin.');
@@ -204,13 +212,60 @@ export class Service {
     await this.patch('Drivers', church, { driverId: drivers[0].driverId }, { isAvailableThisWeek: String(answer), availabilityWeek: week, respondedWeek: week });
     return answer ? (late(church, this.now()) ? 'Availability saved. The assignment time has passed; an admin must arrange any late placement.' : "Got it — you're confirmed as a driver this Sunday. Thanks!") : 'Got it — marked you as unavailable this Sunday. React ✅ in Discord if you need a ride!';
   }
-  async driverReaction(church: Row, discordId: string, messageId: string, added: boolean) {
+  /**
+   * Handles a reaction on a church's current driver ask. Registration never makes anyone
+   * available: only a reaction does, so sign-up outcomes ask the person to react again.
+   * `copy` means they already drive for another church; the caller creates this church's
+   * Drivers row from `source` (same seats and home zone) and marks them available.
+   */
+  async driverReaction(church: Row, discordId: string, messageId: string, added: boolean): Promise<DriverReaction> {
     const week = weekDate(church, this.now());
-    if (church.driverAskMessageId !== messageId || church.driverAskWeek !== week) return;
-    const drivers = (await this.rows('Drivers', church)).filter(d => d.discordId === discordId && d.isActive?.toLowerCase() !== 'false');
-    if (drivers.length !== 1) throw new InputError('Only active drivers for this church can respond to this availability post.');
-    await this.patch('Drivers', church, { driverId: drivers[0].driverId }, {
-      isAvailableThisWeek: String(added), availabilityWeek: week, respondedWeek: added ? week : '',
-    });
+    if (church.driverAskMessageId !== messageId || church.driverAskWeek !== week) return { status: 'ignored' };
+    const rows = (await this.rows('Drivers', church)).filter(d => d.discordId === discordId);
+    if (rows.length > 1) throw new InputError('Duplicate driver rows for you in this church; contact an admin.');
+    const row = rows[0];
+    const alreadyIn = !!row && truth(row.isAvailableThisWeek) && row.availabilityWeek === week;
+    if (added && church.assignmentCompletedWeek === week && !alreadyIn) throw new InputError('Assignments have run for this week. Please contact an admin.');
+    if (row) {
+      if (row.isActive?.toLowerCase() === 'false') {
+        if (!added) return { status: 'ignored' };
+        throw new InputError('Your driver access for this church is turned off. Ask an admin.');
+      }
+      await this.patch('Drivers', church, { driverId: row.driverId }, {
+        isAvailableThisWeek: String(added), availabilityWeek: week, respondedWeek: added ? week : '',
+      });
+      return { status: 'applied' };
+    }
+    if (!added) return { status: 'ignored' };
+    if (!await this.member(church, discordId)) return { status: 'register' };
+    const source = (await this.db.read('Drivers')).rows.find(d => d.discordId === discordId && d.churchId !== church.churchId && d.isActive?.toLowerCase() !== 'false' && Number(d.seatsAvailable) >= 1);
+    return source ? { status: 'copy', source } : { status: 'seats' };
+  }
+  /**
+   * Creates this church's Drivers row for a registered member. They are not available until they
+   * react, unless `available` is set because the reaction itself is what triggered this.
+   */
+  async addDriver(church: Row, discordId: string, options: { seats: number; homeZone?: string; available?: boolean }) {
+    if (!Number.isInteger(options.seats) || options.seats < 1 || options.seats > 20) throw new InputError('Enter a whole number of seats from 1 to 20.');
+    const profile = await this.member(church, discordId);
+    if (!profile) throw new InputError('Finish registration first, then react to the driver post again.');
+    const existing = (await this.rows('Drivers', church)).filter(d => d.discordId === discordId);
+    if (existing.length > 1) throw new InputError('Duplicate driver rows for you in this church; contact an admin.');
+    if (existing[0]) {
+      if (existing[0].isActive?.toLowerCase() === 'false') throw new InputError('Your driver access for this church is turned off. Ask an admin.');
+      return existing[0];
+    }
+    const member = await this.ensureLocalMember(church, discordId);
+    if (!member) throw new InputError('Finish registration first, then react to the driver post again.');
+    if (!await this.resolveChurch(church.churchId)) throw new InputError('Church configuration changed. Please try again.');
+    const week = weekDate(church, this.now());
+    const row = {
+      driverId: randomUUID(), churchId: church.churchId, memberId: member.memberId, name: profile.name, discordId,
+      seatsAvailable: String(options.seats), homeZone: options.homeZone || profile.zone, isActive: 'true',
+      isAvailableThisWeek: String(!!options.available), availabilityWeek: options.available ? week : '',
+      askedWeek: '', askMessageId: '', respondedWeek: options.available ? week : '',
+    };
+    await this.db.save('Drivers', row);
+    return row;
   }
 }

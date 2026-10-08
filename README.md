@@ -74,6 +74,11 @@ Status reflects the code on `main`. "Not built" means no code exists for it yet.
   ask) per listed church, from a row in the `Broadcasts` tab. Re-running replaces the previous
   block. See [docs/discord-bot.md](docs/discord-bot.md#broadcasts-one-command-for-a-greeting-plus-every-churchs-message).
 
+- **Driver sign-up by reaction:** reacting to a driver ask now works like a ride reaction. Unregistered
+  people and registered riders are walked through a short sign-up, people who already drive for another
+  church are added automatically, and only a reaction ever makes a driver available. `/rides sync`
+  also catches up driver reactions. See [docs/discord-bot.md](docs/discord-bot.md#driver-reactions-and-sign-up).
+
 ## Not in the MVP (PRD §29.4)
 
 Web app and member portal, Postgres/Prisma, SMS, +1 guests, standing rides, waitlist autofill,

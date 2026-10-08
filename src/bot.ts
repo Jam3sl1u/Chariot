@@ -7,7 +7,7 @@ import {
 } from 'discord.js';
 import { randomUUID } from 'node:crypto';
 import type { Row } from './sheets.js';
-import { Service, InputError, validPhone } from './service.js';
+import { Service, InputError, truth, validPhone } from './service.js';
 import { broadcastProblems, parseBroadcast, tail } from './broadcast.js';
 import { localTime, weekDate, weeklyDue } from './time.js';
 
@@ -21,8 +21,14 @@ export const commands = [
     .addSubcommand(s => s.setName('broadcast').setDescription('Post a greeting and one message per church from the Broadcasts tab').addStringOption(o => o.setName('name').setDescription('Broadcast ID').setRequired(true))),
 ].map(c => c.toJSON());
 
-type Registration = { churchId: string; userId: string; expires: number; data: Row; zones: string[] };
-type Survey = { churchId: string; userId: string; expires: number };
+type Registration = { churchId: string; userId: string; expires: number; data: Row; zones: string[]; kind: 'rider' | 'driver' };
+/** rider = full ride registration; driver = registration plus driver sign-up; seats = already registered, only needs seats. */
+type Survey = { churchId: string; userId: string; expires: number; kind: 'rider' | 'driver' | 'seats' };
+const surveyButtons = { survey: 'rider', dsurvey: 'driver', dseats: 'seats' } as const;
+const parseSeats = (text: string) => {
+  if (!/^\d+$/.test(text.trim()) || Number(text) < 1 || Number(text) > 20) throw new InputError('Enter a whole number of seats from 1 to 20.');
+  return Number(text);
+};
 export function createClient() {
   return new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildMessageReactions, GatewayIntentBits.DirectMessages],
@@ -119,17 +125,55 @@ export class Bot {
       field('isDriver', 'Volunteer as a driver? (YES or NO)', true, 3), field('seatsAvailable', 'Seats you can offer (drivers only)', false, 2),
     );
   }
+  private field(id: string, label: string, required: boolean, max: number, style = TextInputStyle.Short) {
+    return new ActionRowBuilder<TextInputBuilder>().addComponents(new TextInputBuilder().setCustomId(id).setLabel(label).setStyle(style).setRequired(required).setMaxLength(max));
+  }
+  private driverModal(churchId: string) {
+    return new ModalBuilder().setCustomId(`driver-form:${churchId}`).setTitle('Sign up as a driver').addComponents(
+      this.field('name', 'Full name', true, 100), this.field('phone', 'US phone (+12025550123)', true, 12), this.field('preferences', 'Preferences (optional)', false, 1000, TextInputStyle.Paragraph),
+      this.field('seatsAvailable', 'Seats you can offer (1-20)', true, 2),
+    );
+  }
+  private seatsModal(churchId: string) {
+    return new ModalBuilder().setCustomId(`driver-seats:${churchId}`).setTitle('How many seats can you offer?').addComponents(this.field('seatsAvailable', 'Seats you can offer (1-20)', true, 2));
+  }
   private surveyKey(userId: string) { return userId; }
-  private async startSurvey(church: Row, userId: string) {
+  private async startSurvey(church: Row, userId: string, kind: Survey['kind'] = 'rider') {
     const key = this.surveyKey(userId);
     const current = this.surveys.get(key);
-    if (current && current.expires >= Date.now()) return;
-    this.surveys.set(key, { churchId: church.churchId, userId, expires: Date.now() + 15 * 60_000 });
+    // Keep an unexpired prompt of the same kind (any church for riders, since registration is shared).
+    if (current && current.expires >= Date.now() && current.kind === kind && (kind === 'rider' || current.churchId === church.churchId)) return;
+    this.surveys.set(key, { churchId: church.churchId, userId, expires: Date.now() + 15 * 60_000, kind });
     try {
-      const content = church.registrationDmTemplate?.trim() || `[${church.churchName}] Complete your registration survey before requesting a ride.`;
-      await this.dm(userId, content.replaceAll('{churchName}', church.churchName), [new ActionRowBuilder<ButtonBuilder>().addComponents(new ButtonBuilder().setCustomId(`survey:${church.churchId}`).setLabel('Start registration').setStyle(ButtonStyle.Primary))]);
+      const name = church.churchName;
+      const [content, customId, label] = kind === 'rider'
+        ? [(church.registrationDmTemplate?.trim() || `[${name}] Complete your registration survey before requesting a ride.`).replaceAll('{churchName}', name), `survey:${church.churchId}`, 'Start registration']
+        : kind === 'driver'
+          ? [`[${name}] To drive for ${name}, complete this quick sign-up. Signing up doesn't mark you available: afterwards, react to the driver post again to confirm you're driving this week.`, `dsurvey:${church.churchId}`, 'Start driver sign-up']
+          : [`[${name}] To drive for ${name}, tell us how many seats you can offer. Afterwards, react to the driver post again to confirm you're driving this week.`, `dseats:${church.churchId}`, 'Set my seats'];
+      await this.dm(userId, content, [new ActionRowBuilder<ButtonBuilder>().addComponents(new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(ButtonStyle.Primary))]);
     } catch {
       this.surveys.delete(key);
+    }
+  }
+  /** Grants the Drivers role, runs the write, and takes the role back if the write fails. */
+  private async withDriverRole<T>(church: Row, userId: string, work: () => Promise<T>) {
+    await this.grantDriverRole(church, userId);
+    try { return await work(); }
+    catch (error) { await this.removeDriverRole(church, userId); throw error; }
+  }
+  /** Applies a reaction on the driver ask, starting the right sign-up prompt when the person is not a driver yet. */
+  private async driverReactionFlow(church: Row, userId: string, messageId: string, added: boolean) {
+    const result = await this.service.driverReaction(church, userId, messageId, added);
+    if (result.status === 'register') {
+      await this.service.beginRegistration(church, userId);
+      await this.startSurvey(church, userId, 'driver');
+    } else if (result.status === 'seats') {
+      await this.startSurvey(church, userId, 'seats');
+    } else if (result.status === 'copy') {
+      // Already drives for another church: their reaction here is the opt-in, so they are available now.
+      if (church.driverRoleId?.trim()) await this.grantDriverRole(church, userId);
+      await this.service.addDriver(church, userId, { seats: Number(result.source.seatsAvailable), homeZone: result.source.homeZone, available: true });
     }
   }
   private zoneComponents(id: string, session: Registration, page = 0) {
@@ -151,11 +195,12 @@ export class Bot {
       if (i.isChatInputCommand() && i.commandName === 'register') {
         await i.reply({ content: 'React to the weekly post for your church to start its registration survey.', flags: MessageFlags.Ephemeral }); return;
       }
-      if (i.isButton() && i.customId.startsWith('survey:')) {
-        const churchId = i.customId.slice('survey:'.length);
+      if (i.isButton() && i.customId.split(':')[0] in surveyButtons) {
+        const [prefix, churchId] = i.customId.split(':');
+        const kind = surveyButtons[prefix as keyof typeof surveyButtons];
         const survey = this.surveys.get(this.surveyKey(i.user.id));
-        if (!survey || survey.churchId !== churchId || survey.expires < Date.now()) throw new InputError('Your survey link expired. React to the weekly post again to start over.');
-        await i.showModal(this.modal(churchId)); return;
+        if (!survey || survey.kind !== kind || survey.churchId !== churchId || survey.expires < Date.now()) throw new InputError('Your sign-up link expired. React to the post again to start over.');
+        await i.showModal(kind === 'rider' ? this.modal(churchId) : kind === 'driver' ? this.driverModal(churchId) : this.seatsModal(churchId)); return;
       }
       await i.deferReply({ flags: MessageFlags.Ephemeral });
       if (i.isChatInputCommand() && i.commandName === 'rides' && i.options.getSubcommand() === 'broadcast') {
@@ -170,7 +215,7 @@ export class Bot {
         churchId = i.options.getString('church', true);
       } else if (i.isModalSubmit()) {
         const [kind, id] = i.customId.split(':');
-        if (kind !== 'register-form' || !id) throw new InputError('Invalid registration survey. React to the weekly post again.');
+        if (!['register-form', 'driver-form', 'driver-seats'].includes(kind) || !id) throw new InputError('Invalid sign-up form. React to the post again.');
         churchId = id;
       } else {
         const [, id] = i.customId.split(':');
@@ -189,7 +234,7 @@ export class Bot {
           if (!i.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) throw new InputError('Manage Server permission is required.');
           try {
             if (sub === 'post') await this.post(church);
-            if (sub === 'sync') await this.reconcile(church);
+            if (sub === 'sync') { await this.reconcile(church); await this.reconcileDrivers(church); }
             if (sub === 'ask-drivers') { await this.reset(church); await this.ask(church); }
           } catch (error) {
             this.report(`Interaction /rides ${sub} (${church.churchId})`, error);
@@ -199,15 +244,28 @@ export class Bot {
         }
         for (const [key, value] of this.registrations) if (value.expires < Date.now()) this.registrations.delete(key);
         for (const [key, value] of this.surveys) if (value.expires < Date.now()) this.surveys.delete(key);
-        if (i.isModalSubmit() && i.customId.startsWith('register-form:')) {
-          const driverAnswer = i.fields.getTextInputValue('isDriver').trim().toUpperCase();
+        if (i.isModalSubmit() && i.customId.startsWith('driver-seats:')) {
+          const survey = this.surveys.get(this.surveyKey(i.user.id));
+          if (!survey || survey.kind !== 'seats' || survey.churchId !== church.churchId || survey.expires < Date.now()) throw new InputError('Your sign-up expired. React to the driver post again.');
+          const seats = parseSeats(i.fields.getTextInputValue('seatsAvailable'));
+          await this.withDriverRole(church, i.user.id, () => this.service.addDriver(church, i.user.id, { seats }));
+          this.surveys.delete(this.surveyKey(i.user.id));
+          await i.editReply(`You're set up as a driver for ${church.churchName}. React to the driver post again to confirm you're driving this week.`); return;
+        }
+        if (i.isModalSubmit() && (i.customId.startsWith('register-form:') || i.customId.startsWith('driver-form:'))) {
+          const driverForm = i.customId.startsWith('driver-form:');
+          if (driverForm) {
+            const survey = this.surveys.get(this.surveyKey(i.user.id));
+            if (!survey || survey.kind !== 'driver' || survey.churchId !== church.churchId || survey.expires < Date.now()) throw new InputError('Your sign-up expired. React to the driver post again.');
+          }
+          const driverAnswer = driverForm ? 'YES' : i.fields.getTextInputValue('isDriver').trim().toUpperCase();
           const data = { name: i.fields.getTextInputValue('name').trim(), phone: i.fields.getTextInputValue('phone').trim(), preferences: i.fields.getTextInputValue('preferences').trim(), isDriver: String(driverAnswer === 'YES'), seatsAvailable: i.fields.getTextInputValue('seatsAvailable').trim() };
           if (!data.name || !validPhone(data.phone)) throw new InputError('Enter your name and a valid US E.164 phone (+12025550123). Run /register again.');
           if (driverAnswer !== 'YES' && driverAnswer !== 'NO') throw new InputError('Answer YES or NO for whether you want to volunteer as a driver.');
           if (data.isDriver === 'true' && (!/^\d+$/.test(data.seatsAvailable) || Number(data.seatsAvailable) < 1 || Number(data.seatsAvailable) > 20)) throw new InputError('Volunteer drivers must enter a whole number of seats from 1 to 20.');
           const zones = (await this.service.rows('Zones', church)).sort((a, b) => Number(a.zonePriorityOrder) - Number(b.zonePriorityOrder)).map(z => z.zoneName).filter(z => z && z !== 'Other / Not Listed');
           const id = randomUUID();
-          const session = { churchId: church.churchId, userId: i.user.id, expires: Date.now() + 15 * 60_000, data, zones: [...new Set(zones)] };
+          const session: Registration = { churchId: church.churchId, userId: i.user.id, expires: Date.now() + 15 * 60_000, data, zones: [...new Set(zones)], kind: driverForm ? 'driver' : 'rider' };
           this.registrations.set(id, session);
           await i.editReply({ content: 'Choose your pickup location. Registration expires in 15 minutes.', components: this.zoneComponents(id, session) }); return;
         }
@@ -224,6 +282,16 @@ export class Bot {
           if (!zone) throw new InputError('Invalid pickup location.');
           session.data.zone = zone;
           await i.editReply({ content: 'The MVP sends notifications by Discord DM.', components: [new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(new StringSelectMenuBuilder().setCustomId(`finish:${id}`).setPlaceholder('Confirm notification preference').addOptions({ label: 'Discord DM', value: 'DISCORD_DM' }))] });
+        } else if (action === 'finish' && i.isStringSelectMenu() && session.data.zone && session.kind === 'driver') {
+          // Profile first (never as a volunteer, whose driver row would land in the profile's own church),
+          // then this church's Drivers row. Registering never marks anyone available.
+          await this.withDriverRole(church, i.user.id, async () => {
+            await this.service.register(church, i.user.id, { ...session.data, isDriver: 'false' });
+            await this.service.addDriver(church, i.user.id, { seats: Number(session.data.seatsAvailable) });
+          });
+          this.registrations.delete(id);
+          this.surveys.delete(this.surveyKey(i.user.id));
+          await i.editReply(`Driver sign-up saved for ${church.churchName}. React to the driver post again to confirm you're driving this week.`);
         } else if (action === 'finish' && i.isStringSelectMenu() && session.data.zone) {
           const volunteering = session.data.isDriver === 'true';
           if (volunteering) await this.grantDriverRole(church, i.user.id);
@@ -244,6 +312,7 @@ export class Bot {
 
   private async reaction(reaction: MessageReaction | PartialMessageReaction, user: User | PartialUser, added: boolean) {
     if (user.bot) return;
+    let onDriverAsk = false;
     try {
       if (reaction.partial) await reaction.fetch();
       const message = reaction.message.partial ? await reaction.message.fetch() : reaction.message;
@@ -261,12 +330,13 @@ export class Bot {
       if (handled) return;
       await this.service.runDriverAskMessage(message.guildId, message.id, async church => {
         if (message.channelId !== church.driverAskChannelId) return;
+        onDriverAsk = true;
         await this.isMember(church, user.id);
-        await this.service.driverReaction(church, user.id, message.id, added);
+        await this.driverReactionFlow(church, user.id, message.id, added);
       });
     } catch (error) {
       this.report('Reaction', error);
-      try { await this.dm(user.id, error instanceof InputError ? error.message : 'Your ride change could not be saved. Remove/re-add your reaction to retry, or ask an admin to run /rides sync.'); } catch { this.report('Reaction DM delivery', error); }
+      try { await this.dm(user.id, error instanceof InputError ? error.message : onDriverAsk ? 'Your driver availability could not be saved. Remove/re-add your reaction to retry, or ask an admin to run /rides sync.' : 'Your ride change could not be saved. Remove/re-add your reaction to retry, or ask an admin to run /rides sync.'); } catch { this.report('Reaction DM delivery', error); }
     }
   }
   private async message(message: Message) {
@@ -323,6 +393,52 @@ export class Bot {
     const removed = await this.deleteOwned(channel, church.activeMessageId);
     return { replaced: true, removed, cleared: await this.service.cancelWeekRequests(church, week) };
   }
+  /** Everyone (not bots) who reacted with any emoji, paging past 100 reactors. */
+  private async reactors(message: Message) {
+    const reactors = new Set<string>();
+    for (const reaction of message.reactions.cache.values()) {
+      let after: string | undefined;
+      for (;;) {
+        const batch = await reaction.users.fetch({ limit: 100, after });
+        for (const user of batch.values()) if (!user.bot) reactors.add(user.id);
+        if (batch.size < 100) break;
+        after = batch.last()!.id;
+      }
+    }
+    return reactors;
+  }
+  /**
+   * Catches up the current driver ask with its reactions. Reactors become available (or are walked
+   * through sign-up); drivers who answered by reaction but no longer have one become unavailable.
+   * Hand edits in the Sheet (no recorded response this week) are left alone.
+   */
+  async reconcileDrivers(church: Row) {
+    const week = weekDate(church, this.service.now());
+    if (!church.driverAskMessageId || church.driverAskWeek !== week) return;
+    const channel = await this.channel(church, church.driverAskChannelId, 'driver ask');
+    let message: Message;
+    try { message = await channel.messages.fetch(church.driverAskMessageId); }
+    catch (error) {
+      const code = error && typeof error === 'object' ? (error as { code?: unknown }).code : undefined;
+      if (code === 10008) {
+        await this.service.patch('Churches', church, {}, { driverAskMessageId: '', driverAskWeek: '' });
+        return;
+      }
+      throw error;
+    }
+    if (message.author.id !== this.client.user?.id) throw new InputError('Active driver ask is not owned by this bot.');
+    const reactors = await this.reactors(message);
+    const drivers = await this.service.rows('Drivers', church);
+    const inNow = (driver?: Row) => !!driver && truth(driver.isAvailableThisWeek) && driver.availabilityWeek === week;
+    for (const userId of reactors) {
+      if (inNow(drivers.find(driver => driver.discordId === userId))) continue;
+      try { await this.driverReactionFlow(church, userId, message.id, true); }
+      catch (error) { if (!(error instanceof InputError)) throw error; try { await this.dm(userId, error.message); } catch { this.report('Reconciliation DM', error); } }
+    }
+    for (const driver of drivers) {
+      if (!reactors.has(driver.discordId) && inNow(driver) && driver.respondedWeek === week) await this.service.driverReaction(church, driver.discordId, message.id, false);
+    }
+  }
   async reconcile(church: Row) {
     const week = weekDate(church, this.service.now());
     if (!church.activeMessageId || church.activeWeekDate !== week) return;
@@ -337,16 +453,7 @@ export class Bot {
       throw error;
     }
     if (message.author.id !== this.client.user?.id) throw new InputError('Active weekly message is not owned by this bot.');
-    const reactors = new Set<string>();
-    for (const reaction of message.reactions.cache.values()) {
-      let after: string | undefined;
-      for (;;) {
-        const batch = await reaction.users.fetch({ limit: 100, after });
-        for (const user of batch.values()) if (!user.bot) reactors.add(user.id);
-        if (batch.size < 100) break;
-        after = batch.last()!.id;
-      }
-    }
+    const reactors = await this.reactors(message);
     const members = await this.service.rows('Members', church);
     const requests = await this.service.rows('RideRequests', church);
     for (const userId of reactors) {

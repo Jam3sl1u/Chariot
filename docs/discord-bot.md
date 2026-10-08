@@ -7,8 +7,8 @@ The MVP uses Discord DMs, per §29.2–29.4. There is no SMS selector, portal li
 password setup, standing request, waitlist autofill, or assignment-result notification
 job. Registering updates by `(churchId, discordId)`.
 Pickup choices come from the shared `Zones` registry plus **Other / Not Listed**.
-Admin availability overrides happen by editing the Sheet; `/rides ask-drivers`
-re-sends prompts to nonresponders. Guild channel chat is ignored.
+Admin availability overrides happen by editing the Sheet. Drivers opt in by reacting to their
+church's driver ask post (see below). Guild channel chat is ignored.
 
 ## Install and configure
 
@@ -89,8 +89,7 @@ Churches may share that channel, but each gets a weekly ask post saved as its
 `driverAskMessageId`. Set `driverAskMessageTemplate` for each church; it supports
 `{churchName}` and `{weekDate}`. Any reaction by an active driver on that church's
 current post means they are available; removing it, or not reacting, means unavailable.
-A member who volunteers as a driver during registration becomes active but is not
-available until they react to a weekly ask.
+Signing up as a driver, by any route, never makes someone available: only a reaction does.
 
 Boolean cells are written as actual Sheets booleans. User text is written with
 `RAW` input mode so names/preferences beginning with `=` cannot become formulas.
@@ -175,25 +174,41 @@ function dropdown to remove either control without changing rows.
 
 ## Timing, replies and recovery
 
-**Manual mode:** every process start clears `activeMessageId`, `activeWeekDate`, and
-`availabilityResetWeek` for every church. The bot does not reconcile old reactions,
-run the scheduler, post automatically, reset availability automatically, or send
-driver asks automatically. It waits for an admin command. Use `/rides post church:ID`
-to create a new weekly post, `/rides sync church:ID` to reconcile it, and
-`/rides ask-drivers church:ID` to reset/ask drivers for that church. A post command
-after a restart always creates a fresh message; old posts remain visible but inactive.
+**Manual mode:** weekly state (`activeMessageId`, `activeWeekDate`, `availabilityResetWeek`,
+and the driver ask IDs) lives in the Sheet and survives a restart. The bot does not run
+the scheduler, post automatically, reset availability automatically, or send driver asks
+automatically. It waits for an admin command. Use `/rides post church:ID` to create the
+weekly post, `/rides sync church:ID` to catch up reactions on both the ride post and the
+driver ask, and `/rides ask-drivers church:ID` (in the driver channel) to reset drivers and
+post the ask. Both commands skip a church that already has this week's message; a
+broadcast replaces it.
 
-- Admin `/rides ask-drivers` works immediately for testing and re-sends only
-  to drivers without a recorded response this week. To override availability,
-  edit `isAvailableThisWeek` and set `availabilityWeek` to the current service Sunday.
-  Set `respondedWeek` too if the override should suppress reminders/resends.
-- Drivers reply **YES** or **NO**, case-insensitive, with no extra text or whitespace.
-  They can change an answer by replying again to the original ask.
-- DMs have no guild ID. Context comes only from the persisted prompt, scoped to
-  its intended Discord user and church; membership is rechecked before writes.
-  Use Discord's **Reply** action on the original bot message when more than one
-  prompt is pending. A bare reply is accepted only when exactly one prompt is pending.
-  Context survives restarts; old-week prompts and other users' replies are rejected.
+## Driver reactions and sign-up
+
+Reacting to a church's current driver ask (any emoji) is how a driver opts in; removing the
+reaction opts out. What happens depends on who reacts:
+
+| Who reacts | Result |
+|---|---|
+| Active driver for this church | Marked available this week. |
+| Driver an admin turned off (`isActive` FALSE) | Told "driver access is turned off"; nothing changes. |
+| Drives for another church (active row there) | A Drivers row for this church is created with the same seats and home zone, and they are marked available immediately. |
+| Registered, not a driver anywhere | DM with a **Set my seats** button and a one-field form. Creates this church's Drivers row (home zone = their profile zone) and grants the Drivers role. **Not available** until they react again. |
+| Not registered | A PENDING member is created and a DM with **Start driver sign-up** opens the same survey as riders (seats required, driver answer implied). Creates the profile, the Drivers row and the role. **Not available** until they react again. |
+
+- Removing a reaction as a non-driver does nothing and sends no message.
+- If assignments have run (`assignmentCompletedWeek` is the current service Sunday), a new
+  opt-in is refused with a message, including starting sign-up. Drivers already available can
+  still opt out.
+- `/rides sync` also reconciles the driver ask: reactors become available (or are offered
+  sign-up), and drivers who opted in by reaction but no longer have one become unavailable.
+  Availability you set by hand in the Sheet, with `respondedWeek` blank, is not overwritten.
+  If the ask message was deleted, sync clears its ID so the ask can be posted again.
+- Driver sign-up needs `driverRoleId` set for the church and **Manage Roles** for the bot; if
+  granting the role fails, no Drivers row is created.
+- A broadcast `ask` replaces the post and resets every driver to unavailable, so reactions on
+  the old post no longer count.
+
 - Adding any reaction to the active weekly post creates a ride request; removing a
   reaction cancels it. Startup and `/rides sync` reconcile all emoji reactions,
   including paginated lists over 100 reactors. Re-registering does not itself create
@@ -201,8 +216,8 @@ after a restart always creates a fresh message; old posts remain visible but ina
 - Saturday 10am is informational. The bot does not infer that an assignment ran
   merely because the clock passed 11:45. `assignmentCompletedWeek` closes new
   requests once the separate assignment pass completes. Cancellations
-  stay available. Late driver YES saves availability and explains that an admin
-  must arrange placement; this pass does not change `Assignments` or invoke autofill.
+  stay available. Once assignments have run, a new driver opt-in is refused; this pass
+  does not change `Assignments` or invoke autofill.
 
 Keep one bot instance running. The in-process queue prevents competing bot writes,
 but Google Sheets has no transactions/unique constraints: don't sort/delete data
@@ -230,35 +245,35 @@ below mean the coming local service Sunday, not today's date.
    expect no duplicate for that church. Remove your reaction from A: only A becomes CANCELLED.
    Re-add it: the same A request becomes PENDING. Reactions to unrelated or
    previous-week messages do nothing.
-3. **Driver replies:** seed driver rows for the same Discord account in both
-   churches; run `/rides ask-drivers church:church-a` and then `church:church-b` in the driver channel.
-   Expect two labeled DMs, FALSE default,
-   and distinct saved ask IDs. Send bare `YES`: the bot must ask you to select a
-   prompt. Reply `yes` to A's ask: only A becomes TRUE. Reply `maybe`: error and no
-   change. Reply `NO` to A's ask: only A becomes FALSE. B remains FALSE until its
-   own valid answer. A driver who says NO can still react to request a passenger ride.
-   Re-run `/rides ask-drivers`: only nonresponders are asked. A non-admin cannot run it.
-4. **Restart/manual reset:** stop and start the bot. Confirm both Church rows have
-   blank `activeMessageId`, `activeWeekDate`, and `availabilityResetWeek`, and no
-   post/driver ask occurs on its own. Run `/rides post church:church-a` and `/rides sync
-   church:church-a`; confirm the new post is the only active one and repeated syncs
-   create no duplicate rows. Reply to a previously sent driver DM after restart: it
-   still targets its original church.
-5. **Manual driver asks:** run `/rides ask-drivers church:church-a`; confirm availability
-   is reset and only the appropriate drivers are asked. The configured schedule fields
-   are retained for future automation but do not trigger actions in this manual mode.
-6. **Tenant/stale protections:** reply to an old-week prompt or another user's
-   prompt: no write. Remove a test guild mapping after its prompts have been sent:
+3. **Driver reactions:** run `/rides ask-drivers church:church-a` and then `church:church-b` in
+   the driver channel: each church gets its own ask post and drivers start FALSE. With a
+   seeded driver row for church A, react to A's ask: only A becomes TRUE; remove it: FALSE. React
+   to B's ask: B has no row for you, but you drive for A, so B's row appears with A's seats and
+   zone and is TRUE at once. With a fresh account that has no profile, react to A's ask: you get a
+   **Start driver sign-up** DM; finish it and confirm the Drivers row and role exist and
+   availability is still FALSE; react again: TRUE. With a rider-only account, react: you get a
+   **Set my seats** DM (0 or 25 is rejected); submit it, confirm FALSE, react again: TRUE. A
+   non-admin cannot run `/rides ask-drivers`; re-running it for the same week does nothing.
+4. **Restart:** stop and start the bot. Confirm the Church rows keep their
+   `activeMessageId`, `activeWeekDate` and driver ask IDs, and no post or driver ask occurs on
+   its own. Run `/rides sync church:church-a`; confirm repeated syncs create no duplicate rows
+   and that a reaction made while the bot was stopped is picked up, for both the ride post and
+   the driver ask.
+5. **Manual driver asks:** run `/rides ask-drivers church:church-a`; confirm drivers' availability
+   is reset and one ask post appears. The configured schedule fields are retained for future
+   automation but do not trigger actions in this manual mode.
+6. **Tenant/stale protections:** react to an old-week driver ask or use another
+   user's sign-up button: no write. Remove a test guild mapping after its posts have been sent:
    further events must not write under another church. Duplicate mappings must log
    an ambiguity and drop writes. Restore the valid Church rows afterward.
 7. **Assignment boundary:** in church A only, manually set `assignmentCompletedWeek`
    to the current service Sunday. A fresh reaction must be refused; removing a
    reaction still cancels. B remains open. Clear this test marker afterward.
-   After Saturday 11:45 a driver YES is saved with a manual-placement notice;
-   verify that `Assignments` remains untouched.
+   With the marker set, a driver reacting to church A's ask is refused with a message, and an
+   already-available driver can still opt out; verify that `Assignments` remains untouched.
 8. **DM failure:** disable server DMs on a test user, then react to a weekly post.
    No registration or ride request is created. Re-enable DMs and retry the reaction;
-   then retry driver prompts with `/rides ask-drivers`.
+   then react to the driver ask as a non-driver and confirm no sign-up is created while DMs are off.
 9. **Broadcast:** add a `Broadcasts` row (`type` `post`, `churches` both test church IDs, a
    greeting with `{weekDate}`) and run `/rides broadcast name:<id>` in the shared channel as an
    admin. Expect the greeting, then church A's post, then church B's. React to both, then run

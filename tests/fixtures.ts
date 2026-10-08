@@ -29,7 +29,7 @@ export async function register(f: ReturnType<typeof fixture>, guild = 'guild-a',
 }
 export function discordFixture(f: ReturnType<typeof fixture>) {
   let sequence = 0;
-  const dms: { user: string; content: string; id: string }[] = [];
+  const dms: { user: string; content: string; id: string; components?: unknown }[] = [];
   const replies: string[] = [];
   const roleGrants: { user: string; role: string }[] = [];
   const channels = new Map<string, ReturnType<typeof makeChannel>>();
@@ -70,7 +70,7 @@ export function discordFixture(f: ReturnType<typeof fixture>) {
     user: { id: 'bot' },
     channels: { fetch: async (id: string) => channels.get(id) },
     guilds: { fetch: async () => ({ commands: { create: async () => {} }, members: { fetch: async (user: string) => ({ roles: { add: async (role: string) => { roleGrants.push({ user, role }); }, remove: async () => {} } }) } }) },
-    users: { fetch: async (user: string) => ({ send: async (payload: { content: string }) => { const id = `dm-${++sequence}`; dms.push({ user, content: payload.content, id }); return { id }; } }) },
+    users: { fetch: async (user: string) => ({ send: async (payload: { content: string; components?: unknown }) => { const id = `dm-${++sequence}`; dms.push({ user, content: payload.content, id, components: payload.components }); return { id }; } }) },
   } as unknown as Client;
   const bot = new Bot(client, f.service);
   const sendDM = async (user: string, content: string, prompt?: string) => {
