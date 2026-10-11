@@ -132,3 +132,13 @@ test('shorter seeded distance wins before zone priority when no same-housing mat
   assert.equal(result.find(row => row.memberId === 'member-close-rider')?.driverId, 'driver');
   assert.match(result.find(row => row.memberId === 'member-far-rider')?.unassignedReason ?? '', /No available/);
 });
+
+test('a PENDING driver is never assigned riders; a blank or COMPLETE signup status is', () => {
+  const result = assignByZone({
+    churchId: 'church-a',
+    zones,
+    riders: [rider('rider-1'), rider('rider-2')],
+    drivers: [driver('pending', 4, { signupStatus: 'PENDING' }), driver('complete', 1, { signupStatus: 'COMPLETE' }), driver('blank', 1, { signupStatus: '' })],
+  });
+  assert.deepEqual(result.map(row => row.driverId).sort(), ['blank', 'complete']);
+});

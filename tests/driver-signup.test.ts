@@ -18,83 +18,113 @@ const buttons = (components: unknown) => JSON.stringify(components ?? []);
 
 /** Fakes the Discord interaction objects the bot reads, with the replies and modals it produced. */
 function interactions(d: ReturnType<typeof discordFixture>) {
-  const shown: { custom_id: string }[] = []; const replies: unknown[] = [];
+  const shown: { custom_id: string; components: unknown[] }[] = []; const replies: unknown[] = [];
   const run = (i: object) => (d.bot as unknown as { interaction: (i: unknown) => Promise<void> }).interaction(i);
   const base = (user: string) => ({
-    user: { id: user }, deferred: false, replied: false, deferReply: async function (this: { deferred: boolean }) { this.deferred = true; },
-    editReply: async (value: unknown) => { replies.push(value); },
-    showModal: async (modal: { toJSON(): { custom_id: string } }) => { shown.push(modal.toJSON()); },
+    user: { id: user, username: `${user}-name` }, deferred: false, replied: false, deferReply: async function (this: { deferred: boolean }) { this.deferred = true; },
+    editReply: async (value: unknown) => { replies.push(value); }, reply: async (value: unknown) => { replies.push(value); },
+    showModal: async (modal: { toJSON(): { custom_id: string; components: unknown[] } }) => { shown.push(modal.toJSON()); },
     isChatInputCommand: () => false, isModalSubmit: () => false, isStringSelectMenu: () => false, isButton: () => false,
   });
   const text = () => { const last = replies.at(-1); return typeof last === 'string' ? last : (last as { content: string }).content; };
-  const nextId = () => JSON.parse(JSON.stringify(replies.at(-1))).components[0].components[0].custom_id as string;
   return {
-    shown, replies, text, nextId,
+    shown, replies, text,
     button: (user: string, customId: string) => run({ ...base(user), customId, isButton: () => true }),
-    modal: (user: string, customId: string, fields: Record<string, string>) => run({ ...base(user), customId, isModalSubmit: () => true, fields: { getTextInputValue: (name: string) => fields[name] ?? '' } }),
+    /** `zone` is the dropdown answer; every other key is a text field. */
+    modal: (user: string, customId: string, fields: Record<string, string>) => run({ ...base(user), customId, isModalSubmit: () => true, fields: { getTextInputValue: (name: string) => fields[name] ?? '', getStringSelectValues: (name: string) => name === 'zone' && fields.zone ? [fields.zone] : [] } }),
     command: (user: string, channelId: string, sub: string, churchId = 'a') => run({ ...base(user), isChatInputCommand: () => true, commandName: 'rides', guildId: 'guild-a', channelId, options: { getString: () => churchId, getSubcommand: () => sub }, memberPermissions: { has: () => true } }),
-    select: (user: string, customId: string, value: string) => run({ ...base(user), customId, isStringSelectMenu: () => true, values: [value] }),
   };
 }
 
-test('an unregistered person reacting to the driver ask gets a PENDING placeholder row and driver sign-up, and is not available', async () => {
+test('an unregistered person reacting to the driver ask is available at once as a PENDING placeholder, and is asked to finish sign-up', async () => {
   const { f, d } = setup(); await d.bot.tick();
   await d.sendReaction('newbie', 'guild-a', 'drivers-a', church(f, 'a').driverAskMessageId);
   const member = f.db.data.Members.find(row => row.discordId === 'newbie');
-  assert.deepEqual([member?.profileStatus, member?.canDrive], ['PENDING', 'true']);
+  assert.deepEqual([member?.profileStatus, member?.canDrive, member?.discordUsername], ['PENDING', 'true', 'newbie-name']);
   assert.equal(f.db.data.Drivers.length, 1);
   const placeholder = f.db.data.Drivers[0];
-  assert.deepEqual([placeholder.churchId, placeholder.discordId, placeholder.seatsAvailable, placeholder.isActive, placeholder.isAvailableThisWeek, placeholder.signupStatus, placeholder.name, placeholder.homeZone], ['a', 'newbie', '4', 'true', 'false', 'PENDING', '', '']);
+  assert.deepEqual([placeholder.churchId, placeholder.discordId, placeholder.discordUsername, placeholder.seatsAvailable, placeholder.isActive, placeholder.isAvailableThisWeek, placeholder.availabilityWeek, placeholder.signupStatus, placeholder.name, placeholder.homeZone], ['a', 'newbie', 'newbie-name', '4', 'true', 'true', WEEK, 'PENDING', '', '']);
   assert.equal(d.dms.length, 1);
-  assert.match(d.dms[0].content, /To drive for Church a.*react to the driver post again/);
-  assert.match(buttons(d.dms[0].components), /dsurvey:a/);
+  assert.match(d.dms[0].content, /marked available.*Finish your sign-up/);
+  assert.match(buttons(d.dms[0].components), /register:a:drivers/);
 });
 
-test('driver sign-up creates the Drivers row and role but never availability; re-reacting does', async () => {
+test('the driver form completes the placeholder in one step and keeps the driver available', async () => {
   const { f, d } = setup(); await d.bot.tick();
   const ask = church(f, 'a').driverAskMessageId; const ui = interactions(d);
   await d.sendReaction('newbie', 'guild-a', 'drivers-a', ask);
-  await ui.button('newbie', 'dsurvey:a');
-  assert.equal(ui.shown[0].custom_id, 'driver-form:a');
-  await ui.modal('newbie', 'driver-form:a', { name: 'New Driver', phone: '+12025550123', preferences: '', seatsAvailable: '3' });
-  await ui.select('newbie', ui.nextId(), '0');
-  await ui.select('newbie', ui.nextId(), 'DISCORD_DM');
-  assert.match(ui.text(), /Driver sign-up saved for Church a\. React to the driver post again/);
-  const [driver] = f.db.data.Drivers;
+  await ui.button('newbie', 'register:a:drivers');
+  assert.equal(ui.shown[0].custom_id, 'register-form:a:drivers');
+  assert.equal(ui.shown[0].components.length, 5, 'name, phone, preferences, seats and location are all in the one form');
+  assert.match(JSON.stringify(ui.shown[0].components), /"custom_id":"zone".*Zone a.*Zone b.*Other \/ Not Listed/);
+  await ui.modal('newbie', 'register-form:a:drivers', { name: 'New Driver', phone: '(949) 555-1234', zone: 'Zone a' });
+  assert.match(ui.text(), /Enter how many seats/);
+  await ui.modal('newbie', 'register-form:a:drivers', { name: ' ', phone: '1', seatsAvailable: '3', zone: 'Zone a' });
+  assert.match(ui.text(), /name and a phone number/);
+  await ui.modal('newbie', 'register-form:a:drivers', { name: 'New Driver', phone: '(949) 555-1234', seatsAvailable: '21', zone: 'Zone a' });
+  assert.match(ui.text(), /whole number of seats from 1 to 20/);
+  assert.equal(f.db.data.Drivers[0].signupStatus, 'PENDING', 'rejected submissions write nothing');
+  await ui.modal('newbie', 'register-form:a:drivers', { name: 'New Driver', phone: '(949) 555-1234', seatsAvailable: '3', zone: 'Zone a' });
+  assert.match(ui.text(), /Driver sign-up saved for Church a\. You are marked available this week/);
   assert.equal(f.db.data.Drivers.length, 1, 'the placeholder is updated, not duplicated');
-  assert.deepEqual([driver.churchId, driver.discordId, driver.name, driver.seatsAvailable, driver.homeZone, driver.isActive, driver.signupStatus], ['a', 'newbie', 'New Driver', '3', 'Zone a', 'true', 'COMPLETE']);
-  assert.equal(f.db.data.Members.find(row => row.discordId === 'newbie')?.canDrive, 'true');
-  assert.equal(driver.isAvailableThisWeek, 'false', 'registering never makes anyone available');
-  assert.equal(f.db.data.Members.find(row => row.discordId === 'newbie')?.profileStatus, 'COMPLETE');
-  assert.deepEqual(d.roleGrants, [{ user: 'newbie', role: 'drivers-role-a' }]);
-  await d.sendReaction('newbie', 'guild-a', 'drivers-a', ask);
-  const after = f.db.data.Drivers[0];
-  assert.deepEqual([after.isAvailableThisWeek, after.availabilityWeek, after.respondedWeek], ['true', WEEK, WEEK]);
+  const [driver] = f.db.data.Drivers;
+  assert.deepEqual([driver.name, driver.seatsAvailable, driver.homeZone, driver.signupStatus, driver.isAvailableThisWeek, driver.availabilityWeek, driver.discordUsername], ['New Driver', '3', 'Zone a', 'COMPLETE', 'true', WEEK, 'newbie-name']);
+  const member = f.db.data.Members.find(row => row.discordId === 'newbie')!;
+  assert.deepEqual([member.profileStatus, member.canDrive, member.phone, member.discordUsername], ['COMPLETE', 'true', '(949) 555-1234', 'newbie-name']);
 });
 
-test('a registered rider is asked only for seats; the new row is not available until they react again', async () => {
+test('a registered rider who reacts to the driver ask is available at once and only asked for seats', async () => {
   const { f, d } = setup(); await d.bot.tick(); await registerRider(f, 'a');
   const ask = church(f, 'a').driverAskMessageId; const ui = interactions(d);
   await d.sendReaction('person', 'guild-a', 'drivers-a', ask);
-  assert.match(buttons(d.dms[0].components), /dseats:a/);
+  assert.match(buttons(d.dms[0].components), /register:a:drivers.*Set my seats|Set my seats.*register:a:drivers/);
   const placeholder = f.db.data.Drivers[0];
-  assert.deepEqual([f.db.data.Drivers.length, placeholder.seatsAvailable, placeholder.homeZone, placeholder.name, placeholder.signupStatus, placeholder.isAvailableThisWeek], [1, '4', 'Zone a', 'Test Member', 'PENDING', 'false']);
+  assert.deepEqual([f.db.data.Drivers.length, placeholder.seatsAvailable, placeholder.homeZone, placeholder.name, placeholder.signupStatus, placeholder.isAvailableThisWeek], [1, '4', 'Zone a', 'Test Member', 'PENDING', 'true']);
   assert.ok(placeholder.memberId);
-  await ui.button('person', 'dseats:a');
-  assert.equal(ui.shown[0].custom_id, 'driver-seats:a');
+  await ui.button('person', 'register:a:drivers');
+  assert.equal(ui.shown[0].custom_id, 'driver-seats:a', 'a registered member is not shown the whole form');
   await ui.modal('person', 'driver-seats:a', { seatsAvailable: '0' });
   assert.match(ui.text(), /whole number of seats from 1 to 20/);
   assert.equal(f.db.data.Drivers[0].seatsAvailable, '4');
-  assert.equal(d.roleGrants.length, 0, 'invalid seats are rejected before any role is granted');
   await ui.modal('person', 'driver-seats:a', { seatsAvailable: '5' });
   assert.match(ui.text(), /You're set up as a driver for Church a/);
-  assert.deepEqual(d.roleGrants, [{ user: 'person', role: 'drivers-role-a' }]);
   const [driver] = f.db.data.Drivers;
   assert.equal(f.db.data.Drivers.length, 1);
-  assert.deepEqual([driver.seatsAvailable, driver.homeZone, driver.isAvailableThisWeek, driver.signupStatus], ['5', 'Zone a', 'false', 'COMPLETE']);
+  assert.deepEqual([driver.seatsAvailable, driver.homeZone, driver.isAvailableThisWeek, driver.signupStatus], ['5', 'Zone a', 'true', 'COMPLETE']);
   assert.equal(f.db.data.Members.find(row => row.discordId === 'person')?.canDrive, 'true');
-  await d.sendReaction('person', 'guild-a', 'drivers-a', ask);
-  assert.equal(f.db.data.Drivers[0].isAvailableThisWeek, 'true');
+});
+
+test('the Register button on the rides post opens the full form; the rider path writes no Drivers row', async () => {
+  const { f, d } = setup(); const ui = interactions(d);
+  await ui.button('walkup', 'register:a:rides');
+  assert.equal(ui.shown[0].custom_id, 'register-form:a:rides');
+  assert.equal(f.db.data.Members.length, 0, 'opening the form writes nothing');
+  await ui.modal('walkup', 'register-form:a:rides', { name: 'Walk Up', phone: 'call me', preferences: 'front seat', zone: 'Other / Not Listed' });
+  assert.match(ui.text(), /Registration saved for Church a\. React to the weekly post/);
+  const [member] = f.db.data.Members;
+  assert.deepEqual([member.name, member.phone, member.zone, member.preferences, member.profileStatus, member.canDrive, member.discordUsername], ['Walk Up', 'call me', 'Other / Not Listed', 'front seat', 'COMPLETE', 'false', 'walkup-name']);
+  assert.equal(f.db.data.Drivers.length, 0);
+  await ui.button('walkup', 'register:a:rides');
+  assert.match(ui.text(), /already registered/);
+  assert.equal(ui.shown.length, 1);
+});
+
+test('seats typed into the rides form sign the person up as a driver, but not available until they react', async () => {
+  const { f, d } = setup(); const ui = interactions(d);
+  await ui.modal('both', 'register-form:a:rides', { name: 'Both', phone: '555', seatsAvailable: '2', zone: 'Zone a' });
+  assert.match(ui.text(), /signed up as a driver/);
+  const [driver] = f.db.data.Drivers;
+  assert.deepEqual([driver.signupStatus, driver.seatsAvailable, driver.isAvailableThisWeek, driver.discordUsername], ['COMPLETE', '2', 'false', 'both-name']);
+  assert.equal(f.db.data.Members[0].canDrive, 'true');
+});
+
+test('the weekly post and the driver ask each carry a Register button', async () => {
+  const { f, d } = setup(); await d.bot.tick();
+  await f.service.runChurch('a', c => d.bot.post(c, true));
+  const sentButtons = (channel: string) => d.channels.get(channel)!.sent.map(message => buttons((message as unknown as { components: unknown }).components)).join();
+  assert.match(sentButtons('channel-a'), /register:a:rides/);
+  assert.match(sentButtons('drivers-a'), /register:a:drivers/);
+  assert.match(sentButtons('drivers-a'), /register:b:drivers/, 'every church gets its own button');
 });
 
 test('someone who already drives for another church is added and available right away, with the same seats and home zone', async () => {
@@ -105,7 +135,6 @@ test('someone who already drives for another church is added and available right
   assert.deepEqual([created.seatsAvailable, created.homeZone, created.isAvailableThisWeek, created.availabilityWeek], ['6', 'Zone b', 'true', WEEK]);
   assert.equal(d.dms.length, 0, 'no prompt is needed');
   assert.equal(f.db.data.Drivers.find(row => row.churchId === 'b')!.isAvailableThisWeek, 'false', 'the other church is untouched');
-  assert.deepEqual(d.roleGrants, [{ user: 'person', role: 'drivers-role-a' }]);
   assert.equal(created.signupStatus, 'COMPLETE');
   assert.equal(f.db.data.Members.find(row => row.churchId === 'a' && row.discordId === 'person')?.canDrive, 'true');
 });
@@ -183,34 +212,31 @@ test('each /rides command only runs in its own channel; sync works from either',
   assert.ok(church(f, 'a').driverAskMessageId);
 });
 
-test('re-reacting on a placeholder: a registered rider is made available on the default seats and asked to confirm; an unregistered one is not', async () => {
+test('reacting again on a placeholder does not duplicate it or re-send the prompt', async () => {
   const { f, d } = setup(); await d.bot.tick(); await registerRider(f, 'a');
   const ask = church(f, 'a').driverAskMessageId;
-  await d.sendReaction('person', 'guild-a', 'drivers-a', ask);
-  assert.equal(f.db.data.Drivers[0].isAvailableThisWeek, 'false');
-  await d.sendReaction('person', 'guild-a', 'drivers-a', ask);
-  const row = f.db.data.Drivers[0];
-  assert.deepEqual([row.isAvailableThisWeek, row.seatsAvailable, row.signupStatus], ['true', '4', 'PENDING']);
-  assert.equal(f.db.data.Drivers.length, 1);
-
-  await d.sendReaction('newbie', 'guild-a', 'drivers-a', ask);
-  await d.sendReaction('newbie', 'guild-a', 'drivers-a', ask);
-  const unregistered = f.db.data.Drivers.find(driver => driver.discordId === 'newbie')!;
-  assert.equal(f.db.data.Drivers.filter(driver => driver.discordId === 'newbie').length, 1);
-  assert.deepEqual([unregistered.isAvailableThisWeek, unregistered.signupStatus], ['false', 'PENDING'], 'no availability before the profile is complete');
+  for (const user of ['person', 'newbie']) { await d.sendReaction(user, 'guild-a', 'drivers-a', ask); await d.sendReaction(user, 'guild-a', 'drivers-a', ask); }
+  for (const user of ['person', 'newbie']) {
+    const rows = f.db.data.Drivers.filter(driver => driver.discordId === user);
+    assert.equal(rows.length, 1);
+    assert.deepEqual([rows[0].isAvailableThisWeek, rows[0].seatsAvailable, rows[0].signupStatus], ['true', '4', 'PENDING']);
+  }
+  assert.equal(d.dms.length, 2, 'one prompt each: the second reaction is inside the 15-minute window');
+  await d.sendReaction('newbie', 'guild-a', 'drivers-a', ask, '🚙', false);
+  assert.equal(f.db.data.Drivers.find(driver => driver.discordId === 'newbie')!.isAvailableThisWeek, 'false', 'removing the reaction opts out');
 });
 
-test('sync creates placeholder rows and sign-up prompts for reactors who are not drivers yet', async () => {
+test('sync gives reactors who are not drivers yet a placeholder row, availability and a sign-up prompt', async () => {
   const { f, d } = setup(); await d.bot.tick(); await registerRider(f, 'a', 'rider');
   const askId = church(f, 'a').driverAskMessageId;
   (d.channels.get('drivers-a')!.history.get(askId) as unknown as { setUsers: (emoji: string, ids: string[]) => void }).setUsers('🚙', ['rider', 'stranger']);
   await d.bot.reconcileDrivers(church(f, 'a'));
   const byUser = Object.fromEntries(f.db.data.Drivers.map(row => [row.discordId, row]));
-  assert.deepEqual([byUser.rider?.signupStatus, byUser.rider?.seatsAvailable, byUser.rider?.homeZone, byUser.rider?.isAvailableThisWeek], ['PENDING', '4', 'Zone a', 'false']);
-  assert.deepEqual([byUser.stranger?.signupStatus, byUser.stranger?.seatsAvailable, byUser.stranger?.isAvailableThisWeek], ['PENDING', '4', 'false']);
+  assert.deepEqual([byUser.rider?.signupStatus, byUser.rider?.seatsAvailable, byUser.rider?.homeZone, byUser.rider?.isAvailableThisWeek], ['PENDING', '4', 'Zone a', 'true']);
+  assert.deepEqual([byUser.stranger?.signupStatus, byUser.stranger?.seatsAvailable, byUser.stranger?.isAvailableThisWeek], ['PENDING', '4', 'true']);
   assert.equal(f.db.data.Members.find(row => row.discordId === 'stranger')?.profileStatus, 'PENDING');
-  assert.match(buttons(d.dms.find(dm => dm.user === 'rider')?.components), /dseats:a/);
-  assert.match(buttons(d.dms.find(dm => dm.user === 'stranger')?.components), /dsurvey:a/);
+  assert.match(buttons(d.dms.find(dm => dm.user === 'rider')?.components), /Set my seats/);
+  assert.match(buttons(d.dms.find(dm => dm.user === 'stranger')?.components), /Start driver sign-up/);
 });
 
 test('the canDrive flag follows the registration answer, and copies to another church\'s member row', async () => {

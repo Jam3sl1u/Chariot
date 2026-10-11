@@ -5,7 +5,7 @@ Google Sheet. This repo is the **Discord + Google Sheets MVP** defined in PRD §
 ([`documentation/prd/Chariot_PRD_v2_3.md`](documentation/prd/Chariot_PRD_v2_3.md)) — the lightweight
 phase that precedes the full platform in PRD §1–28.
 
-- **Discord bot** (Node.js / discord.js) — registration survey, ride requests by reaction, driver
+- **Discord bot** (Node.js / discord.js) — registration form, ride requests by reaction, driver
   YES/NO availability, admin `/rides` commands.
 - **Google Sheet** — the data store for every church; each data tab carries a `churchId`.
 - **Apps Script** ([`apps-script/Code.gs`](apps-script/Code.gs)) — the Saturday assignment run, once
@@ -45,7 +45,7 @@ Status reflects the code on `main`. "Not built" means no code exists for it yet.
 | ID | Requirement (short) | Status | Where |
 |---|---|---|---|
 | MVP-000 | Resolve `(guild, channel, message)` → one `churchId` via `activeMessageId`; drop unknown/ambiguous | Done | `src/service.ts`, `src/bot.ts` |
-| MVP-001 | Unregistered reactor gets a **Start registration** DM; no rows until survey completes; registration reusable across churches | Done | `src/service.ts`, `src/bot.ts` |
+| MVP-001 | One registration form (name, phone, preferences, seats for drivers, location), opened from a **Register** button under each post or from the DM an unregistered reactor gets; reusable across churches. A reactor gets a PENDING member row until the form is done. | Done, awaiting the manual acceptance test | `src/service.ts`, `src/bot.ts` |
 | MVP-002 | Any emoji reaction add/remove creates/cancels a `RideRequests` row for that church and week | Done | `src/service.ts` |
 | MVP-003 | +1/guest flow | Deferred (PRD: decide later) | — |
 | MVP-004 | Driver YES/NO reply sets `isAvailableThisWeek` for that driver's church | Done | `src/service.ts`, `src/bot.ts` |
@@ -74,12 +74,11 @@ Status reflects the code on `main`. "Not built" means no code exists for it yet.
   ask) per listed church, from a row in the `Broadcasts` tab. Re-running replaces the previous
   block. See [docs/discord-bot.md](docs/discord-bot.md#broadcasts-one-command-for-a-greeting-plus-every-churchs-message).
 
-- **Driver sign-up by reaction:** reacting to a driver ask now works like a ride reaction. Unregistered
-  people and registered riders are walked through a short sign-up, people who already drive for another
-  church are added automatically, and only a reaction ever makes a driver available. A reaction by a
-  non-driver creates a placeholder `Drivers` row (`signupStatus` PENDING, 4 seats) that sign-up completes, and
-  `Members.canDrive` flags who can drive. `/rides sync` also catches up driver reactions. Run
-  `npm run setup:sheets` before deploying, to add the two new columns. See [docs/discord-bot.md](docs/discord-bot.md#driver-reactions-and-sign-up).
+- **Driver sign-up by reaction or button:** reacting to a driver ask makes the driver available at once. A reaction by a
+  non-driver creates a placeholder `Drivers` row (`signupStatus` PENDING, 4 seats) that the one-step registration form completes;
+  people who already drive for another church are added automatically. Registration is one popup for riders and drivers,
+  `Members.canDrive` flags who can drive, and `discordUsername` is recorded on Members and Drivers. The Drivers role is gone. `/rides sync` also catches up driver reactions. Run
+  `npm run setup:sheets` before deploying, to add the new columns (`signupStatus`, `canDrive`, `discordUsername`). See [docs/discord-bot.md](docs/discord-bot.md#driver-reactions-and-sign-up).
 
 ## Not in the MVP (PRD §29.4)
 

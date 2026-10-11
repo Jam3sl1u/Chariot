@@ -4,8 +4,8 @@ import { sheets, auth, type sheets_v4 } from 'googleapis/build/src/apis/sheets/i
 export type Row = Record<string, string>;
 export const columns = {
   Churches: ['churchId', 'churchName', 'discordGuildId', 'weeklyPostChannelId', 'driverAskChannelId', 'driverRoleId', 'timezone', 'weeklySendDay', 'weeklySendTime', 'weeklyMessageTemplate', 'driverAskMessageTemplate', 'registrationDmTemplate', 'activeMessageId', 'activeWeekDate', 'driverAskMessageId', 'driverAskWeek', 'availabilityResetWeek', 'assignmentCompletedWeek'],
-  Members: ['memberId', 'churchId', 'name', 'discordId', 'zone', 'createdAt', 'phone', 'preferences', 'notificationPreference', 'profileStatus', 'canDrive'],
-  Drivers: ['driverId', 'churchId', 'memberId', 'name', 'discordId', 'seatsAvailable', 'homeZone', 'isAvailableThisWeek', 'isActive', 'availabilityWeek', 'askedWeek', 'askMessageId', 'respondedWeek', 'signupStatus'],
+  Members: ['memberId', 'churchId', 'name', 'discordId', 'zone', 'createdAt', 'phone', 'preferences', 'notificationPreference', 'profileStatus', 'canDrive', 'discordUsername'],
+  Drivers: ['driverId', 'churchId', 'memberId', 'name', 'discordId', 'seatsAvailable', 'homeZone', 'isAvailableThisWeek', 'isActive', 'availabilityWeek', 'askedWeek', 'askMessageId', 'respondedWeek', 'signupStatus', 'discordUsername'],
   Zones: ['zoneId', 'zoneName', 'zonePriorityOrder'],
   RideRequests: ['requestId', 'churchId', 'weekDate', 'memberId', 'status', 'hasPlusOne', 'plusOneName', 'plusOnePhone', 'plusOnePromptId'],
   Assignments: ['weekDate', 'churchId', 'driverId', 'memberId', 'seatPosition', 'notified', 'unassignedReason', 'assignmentStatus'],
@@ -16,7 +16,7 @@ export type Tab = keyof typeof columns;
  * Informational columns: if the header has not been added yet (setup:sheets not run), the value is
  * skipped rather than failing the write, so a deploy can't break registration.
  */
-const softColumns = new Set(['canDrive']);
+const softColumns = new Set(['canDrive', 'discordUsername']);
 /** Tabs that are not scoped to one church, keyed by their own identifier column. */
 const sharedKey: Partial<Record<Tab, string>> = { Zones: 'zoneId', Broadcasts: 'broadcastId' };
 export interface Table { headers: string[]; rows: Row[] }
