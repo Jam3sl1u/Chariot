@@ -14,10 +14,15 @@ export class Memory implements Storage {
     else this.data[tab][index] = { ...this.data[tab][index], ...row };
   }
 }
+/** A Schedules row with every column present; pass only what the test cares about. */
+export function job(values: Row): Row {
+  return { enabled: 'TRUE', message: '', command: '', channel: '', lastRunWeek: '', lastStatus: '', lastError: '', lastRunAt: '', attempts: '', attemptWeek: '', messageSentWeek: '', ...values } as Row;
+}
 export function fixture() {
   const db = new Memory();
   for (const id of ['a', 'b']) {
     db.data.Churches.push({ churchId: id, churchName: `Church ${id}`, discordGuildId: `guild-${id}`, weeklyPostChannelId: `channel-${id}`, driverAskChannelId: `drivers-${id}`, driverRoleId: `drivers-role-${id}`, timezone: 'America/Los_Angeles', weeklySendDay: 'Wednesday', weeklySendTime: '09:00', weeklyMessageTemplate: 'React ✅ for a ride. Deadline Saturday at 10am.', driverAskMessageTemplate: '[{churchName}] Drivers: react to this post if you can drive on {weekDate}.', activeMessageId: `post-${id}`, activeWeekDate: '2026-09-27', driverAskMessageId: '', driverAskWeek: '', availabilityResetWeek: '', assignmentCompletedWeek: '' });
+    db.data.Schedules.push(job({ jobId: `ask-${id}`, churchId: id, day: 'Thursday', time: '12:00', command: `/rides ask-drivers church:${id}` }));
     db.data.Zones.push({ zoneId: `zone-${id}`, zoneName: `Zone ${id}`, zonePriorityOrder: '1' });
   }
   let now = DateTime.fromISO('2026-09-24T12:00:00', { zone: 'America/Los_Angeles' });

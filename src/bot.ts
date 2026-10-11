@@ -9,7 +9,8 @@ import { randomUUID } from 'node:crypto';
 import { columns, type Row, type Tab } from './sheets.js';
 import { Service, InputError, truth, validPhone } from './service.js';
 import { broadcastProblems, parseBroadcast, tail } from './broadcast.js';
-import { localTime, weekDate, weeklyDue } from './time.js';
+import { weekDate } from './time.js';
+import { jobDue, MAX_ATTEMPTS, parseJob, type Job } from './schedule.js';
 
 export const commands = [
   new SlashCommandBuilder().setName('register').setDescription('Learn how to register for church rides'),
@@ -127,7 +128,11 @@ export class Bot {
         // deploy or restart so /rides sync can continue managing the same post.
       }); } catch (error) { this.report(`Startup (${church.churchId})`, error); }
     }
-    console.log('Chariot is ready. Manual mode: use /rides commands to post, sync, or ask drivers.');
+    console.log('Chariot is ready. Scheduler running (Schedules tab); /rides commands still work for manual runs.');
+    // Catch up anything missed while the bot was down, then check every minute. unref: never keeps the process alive.
+    await this.tick();
+    this.timer = setInterval(() => void this.tick(), 60_000);
+    this.timer.unref();
   }
 
   private modal(churchId: string) {
@@ -568,6 +573,10 @@ export class Bot {
       return lines;
     } finally { this.broadcasting.delete(spec.id); }
   }
+  /**
+   * One scheduler pass. Reads only Churches and Schedules unless something needs doing: a guild's
+   * first pass, a stale weekly driver reset, or a due job.
+   */
   async tick() {
     if (this.ticking) return;
     this.ticking = true;
@@ -575,6 +584,7 @@ export class Bot {
       this.churchCache = await this.service.churches();
       for (const church of this.churchCache) {
         try {
+          if (this.initializedGuilds.has(church.discordGuildId) && church.availabilityResetWeek === weekDate(church, this.service.now())) continue;
           await this.service.runChurch(church.churchId, async current => {
             if (!this.initializedGuilds.has(current.discordGuildId)) {
               const guild = await this.client.guilds.fetch(current.discordGuildId);
@@ -582,14 +592,93 @@ export class Bot {
               await this.reconcile(current);
               this.initializedGuilds.add(current.discordGuildId);
             }
-            const local = localTime(current, this.service.now());
             await this.reset(current);
-            if (weeklyDue(current, this.service.now())) await this.post(current);
-            if ((local.weekday === 4 && local.toFormat('HH:mm') >= '12:00') || local.weekday === 5 || (local.weekday === 6 && local.toFormat('HH:mm') < '11:45')) await this.ask(current);
           });
         } catch (error) { this.report(`Schedule (${church.churchId})`, error); }
       }
+      await this.runSchedules();
     } catch (error) { this.report('Schedule', error); }
     finally { this.ticking = false; }
+  }
+  /** Runs every due job in Schedules row order. One job failing never stops the others. */
+  private async runSchedules() {
+    const rows = await this.service.schedules();
+    const seen = new Map<string, number>();
+    for (const row of rows) seen.set(row.jobId.trim(), (seen.get(row.jobId.trim()) ?? 0) + 1);
+    for (const row of rows) {
+      const id = row.jobId.trim();
+      if (row.enabled?.trim().toLowerCase() !== 'true') continue;
+      if (seen.get(id)! > 1) { this.report(`Schedule job ${id}`, new InputError('jobId appears more than once in the Schedules tab; it was not run.')); continue; }
+      try {
+        let job: Job;
+        try { job = parseJob(row); }
+        catch (error) { await this.noteJobError(row, error); continue; }
+        const church = this.churchCache.find(c => c.churchId === job.churchId);
+        if (!church) { await this.noteJobError(row, new InputError(`churchId "${job.churchId}" is not in the Churches tab.`)); continue; }
+        const week = weekDate(church, this.service.now());
+        if (row.lastRunWeek === week || !jobDue(job, church, this.service.now())) continue;
+        const attempts = row.attemptWeek === week ? Number(row.attempts) || 0 : 0;
+        if (attempts >= MAX_ATTEMPTS) continue;
+        try {
+          const outcome = await this.runJob(row, job, week);
+          await this.service.patchSchedule(id, { lastRunWeek: week, lastStatus: outcome, lastError: '', lastRunAt: this.service.now().toISO()!, attempts: '', attemptWeek: '' });
+        } catch (error) {
+          this.report(`Schedule job ${id}`, error);
+          await this.service.patchSchedule(id, { lastStatus: 'FAILED', lastError: this.describe(error), lastRunAt: this.service.now().toISO()!, attempts: String(attempts + 1), attemptWeek: week });
+        }
+      } catch (error) { this.report(`Schedule job ${id}`, error); }
+    }
+  }
+  /** Records a configuration error on the row, writing only when it changed so a bad row doesn't hit the Sheet every minute. */
+  private async noteJobError(row: Row, error: unknown) {
+    const text = this.describe(error);
+    if (row.lastStatus === 'FAILED' && row.lastError === text) return;
+    this.report(`Schedule job ${row.jobId.trim()}`, error);
+    await this.service.patchSchedule(row.jobId.trim(), { lastStatus: 'FAILED', lastError: text, lastRunAt: this.service.now().toISO()! });
+  }
+  /** The message goes first, then the command. A retry after a failed command does not resend the message. */
+  private async runJob(row: Row, job: Job, week: string): Promise<'OK' | 'SKIPPED'> {
+    if (job.message && row.messageSentWeek !== week) {
+      const church = await this.service.resolveChurch(job.churchId);
+      if (!church) throw new InputError('Church configuration changed.');
+      const channel = await this.channel(church, job.channel === 'drivers' ? church.driverAskChannelId : church.weeklyPostChannelId, job.channel === 'drivers' ? 'driver' : 'rides');
+      // Claim before sending, so a crash or a failed Sheet write can never send it twice. A failed send releases the claim and is retried.
+      await this.service.patchSchedule(job.id, { messageSentWeek: week });
+      try { await channel.send({ content: job.message.replaceAll('{churchName}', church.churchName).replaceAll('{weekDate}', week), allowedMentions: { parse: [] } }); }
+      catch (error) {
+        try { await this.service.patchSchedule(job.id, { messageSentWeek: '' }); } catch (releaseError) { this.report(`Schedule job ${job.id} (releasing message claim)`, releaseError); }
+        throw error;
+      }
+    }
+    const command = job.command;
+    if (!command) return 'OK';
+    if (command.kind === 'broadcast') return this.runScheduledBroadcast(command.name);
+    const done = await this.service.runChurch(command.churchId, async church => {
+      if (command.kind === 'post') await this.post(church);
+      else if (command.kind === 'sync') { await this.reconcile(church); await this.reconcileDrivers(church); }
+      else { await this.reset(church); await this.ask(church); }
+      return true;
+    });
+    if (!done) throw new InputError(`Church "${command.churchId}" is not configured.`);
+    return 'OK';
+  }
+  /** Runs a Broadcasts row on a schedule. If another run already put this week's block live, leaves it alone. */
+  private async runScheduledBroadcast(name: string): Promise<'OK' | 'SKIPPED'> {
+    const rows = (await this.service.broadcasts()).filter(row => row.broadcastId.trim() === name);
+    if (rows.length !== 1) throw new InputError(`Broadcast "${name}" must appear exactly once in the Broadcasts tab.`);
+    const spec = parseBroadcast(rows[0]);
+    const churches: Row[] = [];
+    for (const id of spec.churchIds) {
+      const church = await this.service.resolveChurch(id);
+      if (!church) throw new InputError(`Broadcast "${name}": church "${id}" is not configured.`);
+      churches.push(church);
+    }
+    const week = weekDate(churches[0], this.service.now());
+    const live = spec.row.greetingWeek === week && churches.every(c => spec.type === 'post' ? c.activeMessageId && c.activeWeekDate === week : c.driverAskMessageId && c.driverAskWeek === week);
+    if (live) return 'SKIPPED';
+    const channelId = spec.type === 'post' ? churches[0].weeklyPostChannelId : churches[0].driverAskChannelId;
+    const lines = await this.runBroadcast(churches[0].discordGuildId, channelId, name);
+    if (lines.some(line => line.includes(': FAILED'))) throw new InputError(lines.filter(line => line.includes(': FAILED')).join(' '));
+    return 'OK';
   }
 }
