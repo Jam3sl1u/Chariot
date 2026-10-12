@@ -179,6 +179,11 @@ export class Service {
   /** This church's own Members row, created from the shared profile when the person is registered elsewhere. */
   private async ensureLocalMember(church: Row, discordId: string, username?: string) {
     let member = await this.localMember(church, discordId);
+    // Rows that predate the discordUsername column fill in the next time the person interacts.
+    if (member && username && !member.discordUsername) {
+      await this.patch('Members', church, { discordId }, { discordUsername: username });
+      member = await this.localMember(church, discordId);
+    }
     const profile = member || await this.member(church, discordId);
     if (!member && profile) {
       await this.patch('Members', church, { discordId }, {
@@ -191,17 +196,17 @@ export class Service {
     }
     return member;
   }
-  async request(church: Row, discordId: string, week: string) {
-    const member = await this.ensureLocalMember(church, discordId);
+  async request(church: Row, discordId: string, week: string, username?: string) {
+    const member = await this.ensureLocalMember(church, discordId, username);
     if (!member) throw new InputError('Please run /register in the church’s weekly rides channel first.');
     const requests = (await this.rows('RideRequests', church)).filter(r => r.memberId === member.memberId && r.weekDate === week);
     if (requests.length > 1) throw new InputError('Duplicate ride requests; contact an admin.');
     return { member, ride: requests[0] };
   }
-  async reaction(church: Row, discordId: string, messageId: string, added: boolean) {
+  async reaction(church: Row, discordId: string, messageId: string, added: boolean, username?: string) {
     const week = weekDate(church, this.now());
     if (messageId !== church.activeMessageId || church.activeWeekDate !== week) return;
-    const { member, ride } = await this.request(church, discordId, week);
+    const { member, ride } = await this.request(church, discordId, week, added ? username : undefined);
     const key = { memberId: member.memberId, weekDate: week };
     if (added && church.assignmentCompletedWeek === week && ride?.status !== 'PENDING') throw new InputError('Assignments have run for this week. Please contact an admin.');
     if (!added && !ride) return;

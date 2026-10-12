@@ -49,7 +49,7 @@ test('an unregistered person reacting to the driver ask is available at once as 
   assert.match(buttons(d.dms[0].components), /register:a:drivers/);
 });
 
-test('the driver form completes the placeholder in one step and keeps the driver available', async () => {
+test('the driver form completes the placeholder in one step without changing availability', async () => {
   const { f, d } = setup(); await d.bot.tick();
   const ask = church(f, 'a').driverAskMessageId; const ui = interactions(d);
   await d.sendReaction('newbie', 'guild-a', 'drivers-a', ask);
@@ -65,12 +65,21 @@ test('the driver form completes the placeholder in one step and keeps the driver
   assert.match(ui.text(), /whole number of seats from 1 to 20/);
   assert.equal(f.db.data.Drivers[0].signupStatus, 'PENDING', 'rejected submissions write nothing');
   await ui.modal('newbie', 'register-form:a:drivers', { name: 'New Driver', phone: '(949) 555-1234', seatsAvailable: '3', zone: 'Zone a' });
-  assert.match(ui.text(), /Driver sign-up saved for Church a\. You are marked available this week/);
+  assert.match(ui.text(), /Driver sign-up saved for Church a\. React to the current driver post/);
   assert.equal(f.db.data.Drivers.length, 1, 'the placeholder is updated, not duplicated');
   const [driver] = f.db.data.Drivers;
-  assert.deepEqual([driver.name, driver.seatsAvailable, driver.homeZone, driver.signupStatus, driver.isAvailableThisWeek, driver.availabilityWeek, driver.discordUsername], ['New Driver', '3', 'Zone a', 'COMPLETE', 'true', WEEK, 'newbie-name']);
+  assert.deepEqual([driver.name, driver.seatsAvailable, driver.homeZone, driver.signupStatus, driver.isAvailableThisWeek, driver.availabilityWeek, driver.discordUsername], ['New Driver', '3', 'Zone a', 'COMPLETE', 'true', WEEK, 'newbie-name'] /* the earlier reaction, not the form, made them available */);
   const member = f.db.data.Members.find(row => row.discordId === 'newbie')!;
   assert.deepEqual([member.profileStatus, member.canDrive, member.phone, member.discordUsername], ['COMPLETE', 'true', '(949) 555-1234', 'newbie-name']);
+});
+
+test('a driver form from an old post cannot opt anyone into the current week', async () => {
+  const { f, d } = setup(); await d.bot.tick(); await registerRider(f, 'a'); const ui = interactions(d);
+  await ui.modal('person', 'driver-seats:a', { seatsAvailable: '3' });
+  assert.match(ui.text(), /React to the current driver post/);
+  assert.deepEqual([f.db.data.Drivers[0].signupStatus, f.db.data.Drivers[0].isAvailableThisWeek], ['COMPLETE', 'false']);
+  await ui.modal('newcomer', 'register-form:a:drivers', { name: 'New', phone: '555', seatsAvailable: '2', zone: 'Zone a' });
+  assert.equal(f.db.data.Drivers.find(row => row.discordId === 'newcomer')!.isAvailableThisWeek, 'false');
 });
 
 test('a registered rider who reacts to the driver ask is available at once and only asked for seats', async () => {
@@ -90,7 +99,7 @@ test('a registered rider who reacts to the driver ask is available at once and o
   assert.match(ui.text(), /You're set up as a driver for Church a/);
   const [driver] = f.db.data.Drivers;
   assert.equal(f.db.data.Drivers.length, 1);
-  assert.deepEqual([driver.seatsAvailable, driver.homeZone, driver.isAvailableThisWeek, driver.signupStatus], ['5', 'Zone a', 'true', 'COMPLETE']);
+  assert.deepEqual([driver.seatsAvailable, driver.homeZone, driver.isAvailableThisWeek, driver.signupStatus], ['5', 'Zone a', 'true', 'COMPLETE'], 'still available from the earlier reaction');
   assert.equal(f.db.data.Members.find(row => row.discordId === 'person')?.canDrive, 'true');
 });
 
@@ -248,4 +257,35 @@ test('the canDrive flag follows the registration answer, and copies to another c
   assert.equal(f.db.data.Drivers.find(row => row.discordId === 'volunteer')?.signupStatus, 'COMPLETE');
   await f.service.runChurch('b', c => f.service.request(c, 'volunteer', WEEK));
   assert.equal(f.db.data.Members.find(row => row.discordId === 'volunteer' && row.churchId === 'b')?.canDrive, 'true');
+});
+
+test('the sign-up prompt throttle is per church, so a two-church volunteer gets both links', async () => {
+  const { f, d } = setup(); await d.bot.tick();
+  await d.sendReaction('newbie', 'guild-a', 'drivers-a', church(f, 'a').driverAskMessageId);
+  await d.sendReaction('newbie', 'guild-a', 'drivers-a', church(f, 'b').driverAskMessageId);
+  assert.equal(d.dms.length, 2);
+  assert.match(buttons(d.dms[0].components), /register:a:drivers/);
+  assert.match(buttons(d.dms[1].components), /register:b:drivers/);
+  await d.sendReaction('newbie', 'guild-a', 'drivers-a', church(f, 'a').driverAskMessageId);
+  assert.equal(d.dms.length, 2, 'the same church is still throttled');
+});
+
+test('a Register button tapped while the Sheet is slow gets a retry message instead of a dead interaction', async () => {
+  const { f, d } = setup(); const ui = interactions(d);
+  const read = f.db.read.bind(f.db);
+  f.db.read = async (tab: Parameters<typeof read>[0]) => { if (tab === 'Members') await new Promise(resolve => setTimeout(resolve, 3_000)); return read(tab); };
+  await ui.button('walkup', 'register:a:rides');
+  assert.equal(ui.shown.length, 0);
+  assert.match(ui.text(), /busy right now/);
+});
+
+test('a ride reaction backfills a legacy member row\'s blank discordUsername once', async () => {
+  const { f, d } = setup(); await registerRider(f, 'a');
+  assert.equal(f.db.data.Members[0].discordUsername ?? '', '');
+  await d.sendReaction('person', 'guild-a', 'channel-a', 'post-a');
+  assert.equal(f.db.data.Members[0].discordUsername, 'person-name');
+  const before = f.db.writes.filter(w => w.tab === 'Members').length;
+  await d.sendReaction('person', 'guild-a', 'channel-a', 'post-a', '✅', false);
+  await d.sendReaction('person', 'guild-a', 'channel-a', 'post-a');
+  assert.equal(f.db.writes.filter(w => w.tab === 'Members').length, before, 'no further Members writes once filled');
 });

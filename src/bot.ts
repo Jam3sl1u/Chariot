@@ -22,6 +22,8 @@ export const commands = [
 
 type Mode = 'rides' | 'drivers';
 const OTHER_ZONE = 'Other / Not Listed';
+/** Discord requires the first response within 3 seconds; leave headroom for the reply itself. */
+const MODAL_DEADLINE_MS = 2_500;
 /** The Register button under a post. Its id carries everything needed, so it keeps working after a restart. */
 const registerRow = (churchId: string, mode: Mode, label: string) =>
   new ActionRowBuilder<ButtonBuilder>().addComponents(new ButtonBuilder().setCustomId(`register:${churchId}:${mode}`).setLabel(label).setStyle(ButtonStyle.Primary));
@@ -40,6 +42,7 @@ export function createClient() {
 export class Bot {
   private prompted = new Map<string, number>();
   private zoneCache?: { names: string[]; expires: number };
+  private zoneRefresh?: Promise<string[]>;
   private churchCache: Row[] = [];
   private timer?: ReturnType<typeof setInterval>;
   private ticking = false;
@@ -101,6 +104,7 @@ export class Bot {
   private async ready() {
     await this.checkSheetHeaders();
     this.churchCache = await this.service.churches();
+    if (this.churchCache[0]) await this.zoneNames(this.churchCache[0]).catch(() => undefined); // warm the sign-up form's zone list
     for (const church of this.churchCache) {
       try { await this.service.runChurch(church.churchId, async resolved => {
         if (!this.initializedGuilds.has(resolved.discordGuildId)) {
@@ -116,13 +120,19 @@ export class Bot {
     console.log('Chariot is ready. Manual mode: use /rides commands to post, sync, or ask drivers.');
   }
 
-  /** Zone names for the sign-up select, by priority. Cached briefly because a modal must open within 3 seconds. */
+  /** Zone names for the sign-up select, by priority. A modal must open within 3 seconds, so a stale cache is served while it refreshes. */
   private async zoneNames(church: Row) {
-    if (this.zoneCache && this.zoneCache.expires > Date.now()) return this.zoneCache.names;
-    const rows = await this.service.rows('Zones', church);
-    const names = [...new Set(rows.sort((a, b) => Number(a.zonePriorityOrder) - Number(b.zonePriorityOrder)).map(z => z.zoneName).filter(z => z && z !== OTHER_ZONE))];
-    this.zoneCache = { names, expires: Date.now() + 60_000 };
-    return names;
+    const cache = this.zoneCache;
+    if (cache && cache.expires > Date.now()) return cache.names;
+    if (!this.zoneRefresh) {
+      this.zoneRefresh = this.service.rows('Zones', church).then(rows => {
+        const names = [...new Set(rows.sort((a, b) => Number(a.zonePriorityOrder) - Number(b.zonePriorityOrder)).map(z => z.zoneName).filter(z => z && z !== OTHER_ZONE))];
+        this.zoneCache = { names, expires: Date.now() + 60_000 };
+        return names;
+      }).finally(() => { this.zoneRefresh = undefined; });
+      this.zoneRefresh.catch(() => undefined);
+    }
+    return cache ? cache.names : this.zoneRefresh;
   }
   /** One form for riders and drivers. A modal holds 5 fields: blank seats means rider, a number means driver. */
   private async modal(church: Row, mode: Mode) {
@@ -150,7 +160,7 @@ export class Bot {
   }
   /** DMs a Register button, at most once per 15 minutes per person and mode, so a sync does not re-send to everyone. */
   private async prompt(church: Row, userId: string, mode: Mode, message?: string, label?: string) {
-    const key = `${userId}:${mode}`;
+    const key = `${church.churchId}:${userId}:${mode}`;
     const last = this.prompted.get(key);
     if (last && last > Date.now() - 15 * 60_000) return;
     this.prompted.set(key, Date.now());
@@ -162,16 +172,6 @@ export class Bot {
       await this.dm(userId, content, [registerRow(church.churchId, mode, label ?? (mode === 'rides' ? 'Start registration' : 'Start driver sign-up'))]);
     } catch {
       this.prompted.delete(key);
-    }
-  }
-  /** Marks a driver available for this week's ask, as a reaction would. Returns a note for the reply when it did not apply. */
-  private async markAvailable(church: Row, userId: string, username: string) {
-    try {
-      const result = await this.service.driverReaction(church, userId, church.driverAskMessageId, true, username);
-      return result.status === 'applied' ? '' : ' React to the current driver post to be marked available this week.';
-    } catch (error) {
-      if (error instanceof InputError) return ` ${error.message}`;
-      throw error;
     }
   }
   /** Applies a reaction on the driver ask. Reacting makes the person available at once; prompts finish their sign-up. */
@@ -195,11 +195,23 @@ export class Bot {
   private async registerButton(i: ButtonInteraction) {
     const [, churchId, mode] = i.customId.split(':');
     if (mode !== 'rides' && mode !== 'drivers') throw new InputError('This sign-up button is out of date. Ask an admin to repost.');
-    const church = await this.service.resolveChurch(churchId);
-    if (!church) throw new InputError('This church is no longer configured. Ask an admin.');
-    const member = await this.service.member(church, i.user.id);
-    if (member && mode === 'rides') { await i.reply({ content: "You're already registered. React to the weekly post to request a ride.", flags: MessageFlags.Ephemeral }); return; }
-    await i.showModal(member ? this.seatsModal(churchId) : await this.modal(church, mode));
+    // Discord voids the interaction if showModal is not called within 3 seconds, and these are Sheet reads.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const busy = new Promise<'busy'>(resolve => { timer = setTimeout(() => resolve('busy'), MODAL_DEADLINE_MS); });
+    const prepare = (async () => {
+      const church = await this.service.resolveChurch(churchId);
+      if (!church) throw new InputError('This church is no longer configured. Ask an admin.');
+      const member = await this.service.member(church, i.user.id);
+      if (member && mode === 'rides') return { already: true as const };
+      return { modal: member ? this.seatsModal(churchId) : await this.modal(church, mode) };
+    })();
+    prepare.catch(() => undefined);
+    try {
+      const result = await Promise.race([prepare, busy]);
+      if (result === 'busy') { await i.reply({ content: 'Chariot is busy right now. Please tap the button again in a few seconds.', flags: MessageFlags.Ephemeral }); return; }
+      if ('already' in result) { await i.reply({ content: "You're already registered. React to the weekly post to request a ride.", flags: MessageFlags.Ephemeral }); return; }
+      await i.showModal(result.modal);
+    } finally { clearTimeout(timer); }
   }
   private async interaction(i: Interaction) {
     if (!i.isChatInputCommand() && !i.isModalSubmit() && !i.isButton()) return;
@@ -252,8 +264,7 @@ export class Bot {
         if (i.customId.startsWith('driver-seats:')) {
           const seats = parseSeats(i.fields.getTextInputValue('seatsAvailable'));
           await this.service.addDriver(church, i.user.id, { seats, username });
-          const note = await this.markAvailable(church, i.user.id, username);
-          await i.editReply(`You're set up as a driver for ${church.churchName}.${note || ' You are marked available this week.'}`); return;
+          await i.editReply(`You're set up as a driver for ${church.churchName}. React to the current driver post to be marked available this week.`); return;
         }
         const driving = i.customId.split(':')[2] === 'drivers';
         const name = i.fields.getTextInputValue('name').trim();
@@ -266,9 +277,8 @@ export class Bot {
         if (!zone) throw new InputError('Choose a pickup / driving-from location, then tap Register again.');
         await this.service.register(church, i.user.id, { name, phone, preferences: i.fields.getTextInputValue('preferences').trim(), zone, isDriver: 'false', discordUsername: username });
         if (seats !== undefined) await this.service.addDriver(church, i.user.id, { seats, username });
-        const note = driving ? await this.markAvailable(church, i.user.id, username) : '';
         await i.editReply(driving
-          ? `Driver sign-up saved for ${church.churchName}.${note || ' You are marked available this week.'}`
+          ? `Driver sign-up saved for ${church.churchName}. React to the current driver post to be marked available this week.`
           : `Registration saved for ${church.churchName}.${seats !== undefined ? ' You are signed up as a driver: react to the driver post to be marked available.' : ''} React to the weekly post to request a ride.`);
       });
       if (!recognized) await i.editReply('This church survey or command is no longer configured. Tap the Register button on the post again.');
@@ -296,7 +306,7 @@ export class Bot {
           await this.service.beginRegistration(church, user.id, username);
           await this.prompt(church, user.id, 'rides');
         }
-        await this.service.reaction(church, user.id, message.id, added);
+        await this.service.reaction(church, user.id, message.id, added, username);
       });
       if (handled) return;
       await this.service.runDriverAskMessage(message.guildId, message.id, async church => {
@@ -433,7 +443,7 @@ export class Bot {
           await this.service.beginRegistration(church, userId, username);
           await this.prompt(church, userId, 'rides');
         }
-        await this.service.reaction(church, userId, message.id, true);
+        await this.service.reaction(church, userId, message.id, true, username);
       }
       catch (error) { if (!(error instanceof InputError)) throw error; try { await this.dm(userId, error.message); } catch { this.report('Reconciliation DM', error); } }
     }
