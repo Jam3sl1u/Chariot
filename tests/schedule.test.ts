@@ -177,16 +177,30 @@ test('a claimed but unconfirmed message is reported FAILED, not resent, skips th
   assert.match(row(f, 'both').lastError, /never confirmed/); assert.equal(row(f, 'both').attempts, '3');
 });
 
-test('a confirmed send records the week; a failed confirmation still runs the command and later reads as unconfirmed', async () => {
+test('a confirmed send records the week; if only the confirm write fails the final status write reconciles it', async () => {
   const { f, d } = setup([{ jobId: 'both', churchId: 'a', day: 'Thursday', time: '12:00', message: 'Heads up', channel: 'drivers', command: '/rides ask-drivers church:a' }]);
   const save = f.db.save.bind(f.db);
-  f.db.save = async (tab, r, i) => { if (tab === 'Schedules' && r.messageSentWeek === '2026-09-27') throw new Error('quota'); return save(tab, r, i); };
+  f.db.save = async (tab, r, i) => { if (tab === 'Schedules' && r.messageSentWeek === '2026-09-27' && !('lastRunWeek' in r)) throw new Error('quota'); return save(tab, r, i); };
   await d.bot.tick();
   assert.equal(d.channels.get('drivers-a')!.sent.length, 2); assert.equal(row(f, 'both').lastStatus, 'OK');
-  assert.equal(row(f, 'both').messageSentWeek, 'pending:2026-09-27');
+  assert.equal(row(f, 'both').messageSentWeek, '2026-09-27');
+  await d.bot.tick();
+  assert.equal(d.channels.get('drivers-a')!.sent.length, 2);
   const ok = setup([{ jobId: 'note', churchId: 'a', day: 'Thursday', time: '12:00', message: 'Hello', channel: 'drivers' }]);
   await ok.d.bot.tick();
   assert.equal(row(ok.f, 'note').messageSentWeek, '2026-09-27');
+});
+
+test('if the confirm and the final status write both fail, the message is never resent and the row ends FAILED, not OK', async () => {
+  const { f, d } = setup([{ jobId: 'note', churchId: 'a', day: 'Thursday', time: '12:00', message: 'Hello', channel: 'drivers' }]);
+  const save = f.db.save.bind(f.db);
+  let broken = true;
+  f.db.save = async (tab, r, i) => { if (broken && tab === 'Schedules' && r.messageSentWeek === '2026-09-27') throw new Error('quota'); return save(tab, r, i); };
+  await d.bot.tick();
+  assert.equal(row(f, 'note').messageSentWeek, 'pending:2026-09-27'); assert.notEqual(row(f, 'note').lastStatus, 'OK');
+  broken = false; await d.bot.tick();
+  assert.equal(d.channels.get('drivers-a')!.sent.length, 1);
+  assert.equal(row(f, 'note').lastStatus, 'FAILED'); assert.match(row(f, 'note').lastError, /never confirmed/);
 });
 
 test('with no enabled Schedules rows a tick changes no church or driver state', async () => {

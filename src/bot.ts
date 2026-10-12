@@ -634,7 +634,7 @@ export class Bot {
         }
         try {
           const outcome = await this.runJob(row, job, week);
-          await this.service.patchSchedule(id, { lastRunWeek: week, lastStatus: outcome, lastError: '', lastRunAt: this.service.now().toISO()!, attempts: '', attemptWeek: '' });
+          await this.service.patchSchedule(id, { lastRunWeek: week, lastStatus: outcome, lastError: '', lastRunAt: this.service.now().toISO()!, attempts: '', attemptWeek: '', ...(job.message ? { messageSentWeek: week } : {}) });
         } catch (error) {
           this.report(`Schedule job ${id}`, error);
           // An unconfirmed delivery is never retried automatically, so burn the remaining attempts.
