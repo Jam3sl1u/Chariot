@@ -53,7 +53,7 @@ Status reflects the code on `main`. "Not built" means no code exists for it yet.
 | MVP-006 | Unseated riders written with blank `driverId` and an `unassignedReason` | Done | `apps-script/Code.gs` |
 | MVP-007 | Bot-side trigger DMs drivers and members their results and sets `notified = true` | **Not built.** The `notified` column exists, but no bot code reads it. | — |
 | MVP-008 | Apps Script holds a script lock for its run | Done | `apps-script/Code.gs` (`LockService`) |
-| MVP-009 | Clear active-post and availability state on every process start; no automatic scheduled work | **Superseded by James's decision.** Scheduled work is now in scope (see "Added beyond PRD §29"). Commit `e9a7d1f` also stopped clearing state on startup, deliberately. | `src/bot.ts`, `src/schedule.ts` |
+| MVP-009 | Clear active-post and availability state on every process start; no automatic scheduled work | **Superseded by James's decision.** Scheduled work is now in scope (see "Added beyond PRD §29"). Commit `e9a7d1f` also stopped clearing state on startup, deliberately. The timer only touches a church that has an enabled `Schedules` row. | `src/bot.ts`, `src/schedule.ts` |
 
 ## MVP build tasks (PRD §29.9)
 

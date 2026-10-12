@@ -168,3 +168,50 @@ test('if the Sheet write after a send fails, the message is not sent again', asy
   failFinal = false; await d.bot.tick();
   assert.equal(d.channels.get('drivers-a')!.sent.length, 1); assert.equal(row(f, 'note').lastStatus, 'OK');
 });
+
+test('a claimed but unconfirmed message is reported FAILED, not resent, skips the command and is not retried', async () => {
+  const { f, d } = setup([{ jobId: 'both', churchId: 'a', day: 'Thursday', time: '12:00', message: 'Heads up', channel: 'drivers', command: '/rides ask-drivers church:a', messageSentWeek: 'pending:2026-09-27' }]);
+  for (let i = 0; i < 3; i++) await d.bot.tick();
+  assert.equal(d.channels.get('drivers-a')!.sent.length, 0);
+  assert.equal(row(f, 'both').lastStatus, 'FAILED'); assert.equal(row(f, 'both').lastRunWeek, '');
+  assert.match(row(f, 'both').lastError, /never confirmed/); assert.equal(row(f, 'both').attempts, '3');
+});
+
+test('a confirmed send records the week; a failed confirmation still runs the command and later reads as unconfirmed', async () => {
+  const { f, d } = setup([{ jobId: 'both', churchId: 'a', day: 'Thursday', time: '12:00', message: 'Heads up', channel: 'drivers', command: '/rides ask-drivers church:a' }]);
+  const save = f.db.save.bind(f.db);
+  f.db.save = async (tab, r, i) => { if (tab === 'Schedules' && r.messageSentWeek === '2026-09-27') throw new Error('quota'); return save(tab, r, i); };
+  await d.bot.tick();
+  assert.equal(d.channels.get('drivers-a')!.sent.length, 2); assert.equal(row(f, 'both').lastStatus, 'OK');
+  assert.equal(row(f, 'both').messageSentWeek, 'pending:2026-09-27');
+  const ok = setup([{ jobId: 'note', churchId: 'a', day: 'Thursday', time: '12:00', message: 'Hello', channel: 'drivers' }]);
+  await ok.d.bot.tick();
+  assert.equal(row(ok.f, 'note').messageSentWeek, '2026-09-27');
+});
+
+test('with no enabled Schedules rows a tick changes no church or driver state', async () => {
+  for (const rows of [[], [{ jobId: 'off', enabled: 'FALSE', churchId: 'a', day: 'Thursday', time: '12:00', command: '/rides ask-drivers church:a' }]]) {
+    const { f, d } = setup(rows);
+    f.db.data.Drivers.push({ driverId: 'd1', churchId: 'a', isAvailableThisWeek: 'true', availabilityWeek: '2026-09-20' } as never);
+    await d.bot.tick();
+    assert.equal(f.db.writes.length, 0);
+    assert.equal(f.db.data.Drivers[0].isAvailableThisWeek, 'true'); assert.equal(f.a.availabilityResetWeek, '');
+  }
+});
+
+test('an invalid church timezone marks its jobs FAILED once instead of failing silently every minute', async () => {
+  const { f, d } = setup([{ jobId: 'ask-a', churchId: 'a', day: 'Thursday', time: '12:00', command: '/rides ask-drivers church:a' }]);
+  f.a.timezone = 'Mars/Olympus';
+  await d.bot.tick(); const writes = f.db.writes.length;
+  assert.equal(row(f, 'ask-a').lastStatus, 'FAILED'); assert.ok(row(f, 'ask-a').lastError);
+  await d.bot.tick(); await d.bot.tick();
+  assert.equal(f.db.writes.length, writes);
+});
+
+test('a message that only exceeds 2000 characters after placeholders are filled in is rejected without sending', async () => {
+  const { f, d } = setup([{ jobId: 'long', churchId: 'a', day: 'Thursday', time: '12:00', message: `${'x'.repeat(1990)}{churchName}`, channel: 'drivers' }]);
+  await d.bot.tick(); await d.bot.tick();
+  assert.equal(d.channels.get('drivers-a')!.sent.length, 0);
+  assert.equal(row(f, 'long').lastStatus, 'FAILED'); assert.match(row(f, 'long').lastError, /2000/);
+  assert.equal(row(f, 'long').messageSentWeek, '');
+});

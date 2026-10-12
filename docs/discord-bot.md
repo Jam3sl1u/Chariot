@@ -214,9 +214,15 @@ re-reads the tab every minute, so row edits take effect on the next pass without
   is recorded once and not run. Nothing is posted to Discord about failures: check `lastStatus`.
 - A scheduled `broadcast` skips (`SKIPPED`) if that week's greeting and posts are already live, so a
   late run never replaces what an admin already sent. Running the broadcast by hand still replaces.
-- A `message` is marked as sent just before it is sent, and the mark is cleared if the send fails.
-  So a failed send is retried, but a crash or Sheet error around the send can never post it twice;
-  in the rare hard-crash case it may be skipped for that week, so check `lastStatus`.
+- A `message` is claimed in `messageSentWeek` as `pending:<week>` just before it is sent, and
+  changed to `<week>` once Discord accepts it. A failed send clears the claim and is retried. If the
+  bot stops (or the Sheet fails) between claim and confirmation, the row becomes `FAILED` with "never
+  confirmed", the message is **not** resent (it may already be posted) and its command is skipped.
+  Check the channel; to retry, clear `messageSentWeek` and `attempts` on that row.
+- **Only enabled rows cause work.** A church with no enabled `Schedules` row gets no automatic weekly
+  reset, guild setup or posting; its Sheet rows are not touched by the timer.
+- A church with an invalid `timezone`, or a `message` that is over 2000 characters once
+  `{churchName}`/`{weekDate}` are filled in, is recorded as `FAILED` on its row (once) and not run.
 - Run one bot instance only. Two would both post.
 
 ## Driver reactions and sign-up

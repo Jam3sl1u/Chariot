@@ -4,6 +4,17 @@ import type { Row } from './sheets.js';
 import { localTime } from './time.js';
 
 export const MAX_ATTEMPTS = 3;
+export const MESSAGE_LIMIT = 2000;
+/** `messageSentWeek` holds `pending:<week>` between claiming a message and Discord confirming it, then plain `<week>`. */
+export const PENDING = 'pending:';
+
+/** A claimed message whose delivery was never confirmed. It is not resent (that could duplicate it) and is never reported OK. */
+export class UnconfirmedDeliveryError extends InputError {}
+
+/** The text Discord will receive for a scheduled message. */
+export function renderMessage(template: string, church: Row, week: string) {
+  return template.replaceAll('{churchName}', church.churchName).replaceAll('{weekDate}', week);
+}
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 export type Command =
@@ -40,7 +51,7 @@ export function parseJob(row: Row): Job {
   const command = row.command?.trim() ? parseCommand(row.command) : undefined;
   const message = row.message?.trim() || undefined;
   if (!command && !message) throw new InputError('set a command, a message, or both.');
-  if (message && message.length > 2000) throw new InputError(`message is ${message.length} characters; Discord's limit is 2000.`);
+  if (message && message.length > MESSAGE_LIMIT) throw new InputError(`message is ${message.length} characters; Discord's limit is ${MESSAGE_LIMIT}.`);
   const channel = (row.channel ?? '').trim().toLowerCase();
   if (message && channel !== 'rides' && channel !== 'drivers') throw new InputError('channel must be "rides" or "drivers" when a message is set.');
   return { id, churchId, day, time, command, message, channel: message ? channel as 'rides' | 'drivers' : undefined };
