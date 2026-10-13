@@ -4,6 +4,6 @@ import { Sheets } from './sheets.js';
 async function main() {
   const env = sheetConfig();
   await Sheets.connect(env.sheetId, env.keyPath).initialize();
-  console.log('Required headers added (and the Broadcasts and Schedules tabs created if missing). Configure each church’s driverRoleId, timezone, weeklyMessageTemplate, driverAskMessageTemplate, and optional registrationDmTemplate. Automatic posting is configured in the Schedules tab.');
+  console.log('Required headers added (and the Broadcasts and Schedules tabs created if missing). Configure each church’s timezone, weeklyMessageTemplate, driverAskMessageTemplate, and optional registrationDmTemplate. Automatic posting is configured in the Schedules tab.');
 }
 main().catch(() => { console.error('Sheet setup failed. Check credentials, sharing, and existing tab/header names.'); process.exitCode = 1; });

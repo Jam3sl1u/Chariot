@@ -36,7 +36,6 @@ export function discordFixture(f: ReturnType<typeof fixture>) {
   let sequence = 0;
   const dms: { user: string; content: string; id: string; components?: unknown }[] = [];
   const replies: string[] = [];
-  const roleGrants: { user: string; role: string }[] = [];
   const channels = new Map<string, ReturnType<typeof makeChannel>>();
   function makeMessage(id: string, channelId: string, history: Collection<string, { id: string }>, embeds: unknown[] = [], content = '') {
     const reactions = new Collection<string, { emoji: { name: string }; users: { fetch: (options: { after?: string }) => Promise<Collection<string, { id: string; bot: boolean }>> } }>();
@@ -62,7 +61,7 @@ export function discordFixture(f: ReturnType<typeof fixture>) {
         if (!message) throw { code: 10008 };
         return message;
       } },
-      send: async (payload: { embeds?: unknown[]; content?: string }) => { const m = makeMessage(`sent-${++sequence}`, id, history, payload.embeds, payload.content); history.set(m.id, m); sent.push(m); return m; },
+      send: async (payload: { embeds?: unknown[]; content?: string; components?: unknown[] }) => { const m = { ...makeMessage(`sent-${++sequence}`, id, history, payload.embeds, payload.content), components: payload.components ?? [] }; history.set(m.id, m); sent.push(m); return m; },
     };
   }
   for (const c of [f.a, f.b]) {
@@ -74,7 +73,7 @@ export function discordFixture(f: ReturnType<typeof fixture>) {
   const client = {
     user: { id: 'bot' },
     channels: { fetch: async (id: string) => channels.get(id) },
-    guilds: { fetch: async () => ({ commands: { create: async () => {} }, members: { fetch: async (user: string) => ({ roles: { add: async (role: string) => { roleGrants.push({ user, role }); }, remove: async () => {} } }) } }) },
+    guilds: { fetch: async () => ({ commands: { create: async () => {} }, members: { fetch: async () => ({}) } }) },
     users: { fetch: async (user: string) => ({ send: async (payload: { content: string; components?: unknown }) => { const id = `dm-${++sequence}`; dms.push({ user, content: payload.content, id, components: payload.components }); return { id }; } }) },
   } as unknown as Client;
   const bot = new Bot(client, f.service);
@@ -86,8 +85,8 @@ export function discordFixture(f: ReturnType<typeof fixture>) {
     await (bot as unknown as { reaction: (r: MessageReaction, u: User, added: boolean) => Promise<void> }).reaction({
       emoji: { name: emoji }, partial: false, users: { remove: async () => { removed = true; } },
       message: { partial: false, id: messageId, guildId, channelId, author: { id: 'bot' }, reply: async (value: string | { content: string }) => { replies.push(typeof value === 'string' ? value : value.content); } },
-    } as unknown as MessageReaction, { id: user, bot: false } as User, added);
+    } as unknown as MessageReaction, { id: user, bot: false, partial: false, username: `${user}-name` } as User, added);
     return { removed };
   };
-  return { bot, dms, replies, roleGrants, channels, sendDM, sendReaction };
+  return { bot, dms, replies, channels, sendDM, sendReaction };
 }
