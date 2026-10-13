@@ -55,7 +55,7 @@ Existing columns may be reordered; code maps them by header name.
 | Tab | Additional columns | Who sets them |
 |---|---|---|
 | Churches | `timezone`, `weeklyMessageTemplate`, `registrationDmTemplate` | Admin: IANA timezone (e.g. `America/Los_Angeles`), weekly-post text (max 2000 characters), and optional registration-DM text (max 2000 characters). Use `{churchName}` in the DM template to insert that row's church name. A blank DM template uses the built-in message. No guessed timezone default. When things run is set only in the `Schedules` tab. |
-| Churches | `activeMessageId`, `activeWeekDate`, `availabilityResetWeek` | Bot. Clears all three on every process start; dates are the service Sunday, `YYYY-MM-DD`. |
+| Churches | `activeMessageId`, `activeWeekDate`, `availabilityResetWeek` | Bot. Persist across restarts (not cleared on start). `activeMessageId`/`activeWeekDate` track the current weekly post; `availabilityResetWeek` marks the last weekly driver reset, which the scheduler redoes at the start of each new week for churches with an enabled `Schedules` row. Dates are the service Sunday, `YYYY-MM-DD`. |
 | Churches | `assignmentCompletedWeek` | Future assignment integration, or admin after a manual assignment run. Set to the service Sunday only **after assignments have actually completed**. Leave blank for this pass. |
 | Members | `phone`, `preferences`, `notificationPreference` | Registration; preference is `DISCORD_DM` in this MVP. |
 | Members | `canDrive` | Bot, editable by admins. TRUE when the person volunteered or has a Drivers row in that church, FALSE when they registered as a rider only. Informational: nothing reads it to decide availability. |
