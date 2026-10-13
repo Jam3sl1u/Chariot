@@ -85,6 +85,14 @@ export class Service {
       await this.db.save('Broadcasts', values, matches[0].i);
     });
   }
+  async schedules() { return (await this.db.read('Schedules')).rows.filter(r => r.jobId?.trim()); }
+  patchSchedule(jobId: string, values: Row) {
+    return this.exclusive(async () => {
+      const matches = (await this.db.read('Schedules')).rows.map((row, i) => ({ row, i })).filter(({ row }) => row.jobId?.trim() === jobId);
+      if (matches.length !== 1) throw new InputError('That scheduled job changed or was removed. Please try again.');
+      await this.db.save('Schedules', values, matches[0].i);
+    });
+  }
   /** Cancels (never deletes) the week's pending requests; a fresh reaction restores one to PENDING. */
   async cancelWeekRequests(church: Row, week: string) {
     const pending = (await this.rows('RideRequests', church)).filter(r => r.weekDate === week && r.status === 'PENDING');

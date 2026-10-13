@@ -10,6 +10,7 @@ export const columns = {
   RideRequests: ['requestId', 'churchId', 'weekDate', 'memberId', 'status', 'hasPlusOne', 'plusOneName', 'plusOnePhone', 'plusOnePromptId'],
   Assignments: ['weekDate', 'churchId', 'driverId', 'memberId', 'seatPosition', 'notified', 'unassignedReason', 'assignmentStatus'],
   Broadcasts: ['broadcastId', 'type', 'churches', 'greeting', 'greetingMessageId', 'greetingWeek'],
+  Schedules: ['jobId', 'enabled', 'churchId', 'day', 'time', 'command', 'message', 'channel', 'lastRunWeek', 'lastStatus', 'lastError', 'lastRunAt', 'attempts', 'attemptWeek', 'messageSentWeek'],
 } as const;
 export type Tab = keyof typeof columns;
 /**
@@ -18,7 +19,7 @@ export type Tab = keyof typeof columns;
  */
 const softColumns = new Set(['canDrive', 'discordUsername']);
 /** Tabs that are not scoped to one church, keyed by their own identifier column. */
-const sharedKey: Partial<Record<Tab, string>> = { Zones: 'zoneId', Broadcasts: 'broadcastId' };
+const sharedKey: Partial<Record<Tab, string>> = { Zones: 'zoneId', Broadcasts: 'broadcastId', Schedules: 'jobId' };
 export interface Table { headers: string[]; rows: Row[] }
 export interface Storage {
   read(tab: Tab): Promise<Table>;
@@ -72,6 +73,7 @@ export class Sheets implements Storage {
   // Explicit setup command only: append missing headers without moving existing columns/data.
   async initialize() {
     await this.ensureTab('Broadcasts');
+    await this.ensureTab('Schedules');
     for (const tab of Object.keys(columns) as Tab[]) {
       const { headers } = await this.read(tab);
       const missing = columns[tab].filter(name => !headers.includes(name));

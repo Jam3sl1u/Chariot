@@ -32,7 +32,7 @@ Setup, configuration and the exact manual acceptance test live in
 | Command | What it does |
 |---|---|
 | `npm start` | Runs the bot as one persistent process. |
-| `npm run setup:sheets` | Appends the approved supporting headers to the existing tabs and creates the `Broadcasts` tab if missing (bot stopped). |
+| `npm run setup:sheets` | Appends the approved supporting headers to the existing tabs and creates the `Broadcasts` and `Schedules` tabs if missing (bot stopped). |
 | `npm run verify:sheets` | Checks API access and headers without printing IDs or data. |
 | `npm run migrate:zones-global` / `seed:priority-zones` / `seed:routing-data` | One-time zone and routing-data setup. |
 | `npm run seed:assignment-test` / `verify:assignment-test` | Seed and check two-church assignment test data. |
@@ -53,7 +53,7 @@ Status reflects the code on `main`. "Not built" means no code exists for it yet.
 | MVP-006 | Unseated riders written with blank `driverId` and an `unassignedReason` | Done | `apps-script/Code.gs` |
 | MVP-007 | Bot-side trigger DMs drivers and members their results and sets `notified = true` | **Not built.** The `notified` column exists, but no bot code reads it. | — |
 | MVP-008 | Apps Script holds a script lock for its run | Done | `apps-script/Code.gs` (`LockService`) |
-| MVP-009 | Clear active-post and availability state on every process start; no automatic scheduled work | Partly. The no-scheduling half holds (the timer is never started). Commit `e9a7d1f` deliberately stopped clearing state on startup, so the PRD text and `docs/discord-bot.md` no longer match the code. | `src/bot.ts` |
+| MVP-009 | Clear active-post and availability state on every process start; no automatic scheduled work | **Superseded by James's decision.** Scheduled work is now in scope (see "Added beyond PRD §29"). Commit `e9a7d1f` also stopped clearing state on startup, deliberately. The timer only touches a church that has an enabled `Schedules` row. | `src/bot.ts`, `src/schedule.ts` |
 
 ## MVP build tasks (PRD §29.9)
 
@@ -73,6 +73,12 @@ Status reflects the code on `main`. "Not built" means no code exists for it yet.
 - **Broadcasts:** `/rides broadcast name:<id>` posts a greeting and then one ride post (or driver
   ask) per listed church, from a row in the `Broadcasts` tab. Re-running replaces the previous
   block. See [docs/discord-bot.md](docs/discord-bot.md#broadcasts-one-command-for-a-greeting-plus-every-churchs-message).
+
+- **Scheduled flows:** the bot runs a one-minute scheduler. Jobs are rows in the `Schedules` tab (day,
+  time, and a `/rides` command, a plain message, or both). A job missed while the bot was down runs when it
+  is back, as long as it is still the same Monday-to-Sunday week. This replaces PRD BOT-010/013
+  ("no scheduler") for this repo; the PRD is unchanged. Run `npm run setup:sheets` first to create the tab.
+  See [docs/discord-bot.md](docs/discord-bot.md#scheduled-jobs-schedules-tab).
 
 - **Driver sign-up by reaction or button:** reacting to a driver ask makes the driver available at once. A reaction by a
   non-driver creates a placeholder `Drivers` row (`signupStatus` PENDING, 4 seats) that the one-step registration form completes;

@@ -55,8 +55,8 @@ Existing columns may be reordered; code maps them by header name.
 
 | Tab | Additional columns | Who sets them |
 |---|---|---|
-| Churches | `timezone`, `weeklySendDay`, `weeklySendTime`, `weeklyMessageTemplate`, `registrationDmTemplate` | Admin: IANA timezone (e.g. `America/Los_Angeles`), full English weekday (e.g. `Wednesday`), 24h `HH:mm`, weekly-post text (max 2000 characters), and optional registration-DM text (max 2000 characters). Use `{churchName}` in the DM template to insert that row's church name. A blank DM template uses the built-in message. No guessed timezone/schedule defaults. |
-| Churches | `activeMessageId`, `activeWeekDate`, `availabilityResetWeek` | Bot. Clears all three on every process start; dates are the service Sunday, `YYYY-MM-DD`. |
+| Churches | `timezone`, `weeklyMessageTemplate`, `registrationDmTemplate` | Admin: IANA timezone (e.g. `America/Los_Angeles`), weekly-post text (max 2000 characters), and optional registration-DM text (max 2000 characters). Use `{churchName}` in the DM template to insert that row's church name. A blank DM template uses the built-in message. No guessed timezone default. When things run is set only in the `Schedules` tab. |
+| Churches | `activeMessageId`, `activeWeekDate`, `availabilityResetWeek` | Bot. Persist across restarts (not cleared on start). `activeMessageId`/`activeWeekDate` track the current weekly post; `availabilityResetWeek` marks the last weekly driver reset, which the scheduler redoes at the start of each new week for churches with an enabled `Schedules` row. Dates are the service Sunday, `YYYY-MM-DD`. |
 | Churches | `assignmentCompletedWeek` | Future assignment integration, or admin after a manual assignment run. Set to the service Sunday only **after assignments have actually completed**. Leave blank for this pass. |
 | Members | `phone`, `preferences`, `notificationPreference` | Registration; preference is `DISCORD_DM` in this MVP. `phone` is free text: the form only requires it to be non-empty. |
 | Members, Drivers | `discordUsername` | Bot. The person's Discord username, written whenever the row is created or completed, so the Sheet is readable next to `discordId`. Rows that predate the column fill in the next time the person interacts. Not logged. |
@@ -65,6 +65,7 @@ Existing columns may be reordered; code maps them by header name.
 | Drivers | `isActive` | Admin; blank/TRUE means active, FALSE disables asks/replies. |
 | Drivers | `availabilityWeek`, `askedWeek`, `askMessageId`, `respondedWeek` | Bot; scopes/reset/reply context for each week. |
 | Drivers | `signupStatus` | Bot. `PENDING` = a placeholder created by a reaction (4 seats until they finish sign-up); `COMPLETE` = they submitted the form or an admin added the row. Blank is treated as complete. Filter on `PENDING` to see who still owes a sign-up. |
+| Schedules | all columns | See "Scheduled jobs" below. |
 | Assignments | `unassignedReason`, `assignmentStatus` | Assignment script. Status is `ASSIGNED`, `UNASSIGNED`, or `CANCELLED`; cancelled rows remain as history but do not occupy a seat. |
 
 `Churches.churchId` must be unique. Every church row uses the same `discordGuildId` and
@@ -179,14 +180,53 @@ function dropdown to remove either control without changing rows.
 
 ## Timing, replies and recovery
 
-**Manual mode:** weekly state (`activeMessageId`, `activeWeekDate`, `availabilityResetWeek`,
-and the driver ask IDs) lives in the Sheet and survives a restart. The bot does not run
-the scheduler, post automatically, reset availability automatically, or send driver asks
-automatically. It waits for an admin command. Use `/rides post church:ID` to create the
-weekly post (rides channel), `/rides sync church:ID` to catch up reactions on both the ride
-post and the driver ask (run it in either channel), and `/rides ask-drivers church:ID` (in the driver channel) to reset drivers and
-post the ask. Both commands skip a church that already has this week's message; a
-broadcast replaces it.
+**Scheduler:** the bot runs one pass at startup and then every minute. A pass reads only the
+`Churches` and `Schedules` tabs unless a job is due, a guild is seen for the first time, or the
+weekly driver reset is stale. Weekly state (`activeMessageId`, `activeWeekDate`,
+`availabilityResetWeek`, the driver ask IDs) lives in the Sheet and survives a restart. What runs
+and when is defined only in the `Schedules` tab (below); with no rows, nothing happens
+automatically and the `/rides` commands work as before. `weeklySendDay` and `weeklySendTime` in
+`Churches` are no longer read: use a `Schedules` row instead.
+Use `/rides post church:ID`, `/rides sync church:ID` and `/rides ask-drivers church:ID` for manual runs.
+
+## Scheduled jobs (Schedules tab)
+
+`npm run setup:sheets` creates the `Schedules` tab (restart the bot once afterwards). The bot
+re-reads the tab every minute, so row edits take effect on the next pass without a restart.
+
+| Column | Who sets it | Meaning |
+|---|---|---|
+| `jobId` | Admin | Unique name. A `jobId` that appears twice is not run. |
+| `enabled` | Admin | `TRUE` to run. Anything else is off. |
+| `churchId` | Admin | The church whose timezone sets the clock, and whose channel a `message` uses. |
+| `day`, `time` | Admin | Full English weekday and 24-hour `HH:mm`, in that church's timezone. |
+| `command` | Admin | Optional. Exactly one of `/rides post church:ID`, `/rides ask-drivers church:ID`, `/rides sync church:ID`, `/rides broadcast name:ID`. Anything else is rejected. |
+| `message` | Admin | Optional plain text (max 2000 characters). `{churchName}` and `{weekDate}` are replaced. |
+| `channel` | Admin | `rides` or `drivers`; required with `message`. Posts in that church's `weeklyPostChannelId` or `driverAskChannelId`. |
+| `lastRunWeek`, `lastStatus`, `lastError`, `lastRunAt`, `attempts`, `attemptWeek`, `messageSentWeek` | Bot | Progress and result. `lastStatus` is `OK`, `SKIPPED` or `FAILED`; `lastError` never holds IDs or tokens. |
+
+- A row needs a `command`, a `message`, or both. With both, the message is sent first, then the
+  command. If the command fails and is retried, the message is not sent again.
+- **Catch-up:** a job is due from its day/time until Sunday night (the church's local week,
+  Monday to Sunday). If the bot was down, the job runs as soon as it is back, however late
+  in that week. A job already done this week never repeats, and a previous week is never replayed.
+  Catch-up does not check whether assignments have run: a late `post` or `ask-drivers` still posts.
+- Several jobs may share a time. They run one at a time in row order; one failing does not stop the others.
+- **Failures:** a failed job is recorded on its row and retried on later passes, up to 3 attempts
+  per week, then left alone until the next week. A badly filled-in row (bad day, time or command)
+  is recorded once and not run. Nothing is posted to Discord about failures: check `lastStatus`.
+- A scheduled `broadcast` skips (`SKIPPED`) if that week's greeting and posts are already live, so a
+  late run never replaces what an admin already sent. Running the broadcast by hand still replaces.
+- A `message` is claimed in `messageSentWeek` as `pending:<week>` just before it is sent, and
+  changed to `<week>` once Discord accepts it. A failed send clears the claim and is retried. If the
+  bot stops (or the Sheet fails) between claim and confirmation, the row becomes `FAILED` with "never
+  confirmed", the message is **not** resent (it may already be posted) and its command is skipped.
+  Check the channel; to retry, clear `messageSentWeek` and `attempts` on that row.
+- **Only enabled rows cause work.** A church with no enabled `Schedules` row gets no automatic weekly
+  reset, guild setup or posting; its Sheet rows are not touched by the timer.
+- A church with an invalid `timezone`, or a `message` that is over 2000 characters once
+  `{churchName}`/`{weekDate}` are filled in, is recorded as `FAILED` on its row (once) and not run.
+- Run one bot instance only. Two would both post.
 
 ## Driver reactions and sign-up
 
@@ -278,14 +318,13 @@ below mean the coming local service Sunday, not today's date.
    confirm the seats and COMPLETE. Also tap **Sign up to drive** under the ask without reacting: the form
    opens, and submitting saves your seats but leaves availability as it was (react to be TRUE). A
    non-admin cannot run `/rides ask-drivers`; re-running it for the same week does nothing.
-4. **Restart:** stop and start the bot. Confirm the Church rows keep their
+4. **Restart:** stop and start the bot with no `Schedules` rows enabled. Confirm the Church rows keep their
    `activeMessageId`, `activeWeekDate` and driver ask IDs, and no post or driver ask occurs on
    its own. Run `/rides sync church:church-a`; confirm repeated syncs create no duplicate rows
    and that a reaction made while the bot was stopped is picked up, for both the ride post and
    the driver ask.
 5. **Manual driver asks:** run `/rides ask-drivers church:church-a`; confirm drivers' availability
-   is reset and one ask post appears. The configured schedule fields are retained for future
-   automation but do not trigger actions in this manual mode.
+   is reset and one ask post appears.
 6. **Tenant/stale protections:** react to an old-week driver ask or use another
    user's sign-up button: no write. Remove a test guild mapping after its posts have been sent:
    further events must not write under another church. Duplicate mappings must log
@@ -309,6 +348,13 @@ below mean the coming local service Sunday, not today's date.
    it again: the first block disappears, a new block appears, both requests become CANCELLED,
    and a fresh reaction restores them. Repeat with `type` `ask` (drivers' availability resets
    to FALSE). A non-admin cannot run it.
+10. **Scheduled job:** add a `Schedules` row for the test church a few minutes ahead (`day`,
+   `time` in its timezone, `command` `/rides ask-drivers church:church-a`, `enabled` TRUE). At that
+   minute one driver ask appears and the row shows `lastStatus` OK with `lastRunWeek` set. Restart
+   the bot: no second post. Stop the bot, move the row's `time` a few minutes into the past, clear
+   `lastRunWeek`, start the bot: the job runs once at startup (catch-up). Try a `message` row with
+   `channel` `drivers`, and a row with a misspelled command: it must show `FAILED` with an
+   explanation and post nothing.
 
 Automated checks: `npm run typecheck` and `npm test` (Node's built-in test runner,
 no Jest/Playwright infrastructure). They use in-memory Sheets/Discord doubles;
