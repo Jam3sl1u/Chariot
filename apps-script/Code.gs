@@ -180,7 +180,8 @@ function assignByZone_(input) {
   }
   var eligibleDrivers = input.drivers
     .filter(function (driver) {
-      return driver.churchId === churchId && isTrue_(driver.isAvailableThisWeek) && Number(driver.seatsAvailable) > 0;
+      // A PENDING driver reacted but has not finished sign-up (guessed seats, no name or zone), so no one is assigned to them.
+      return driver.churchId === churchId && isTrue_(driver.isAvailableThisWeek) && String(driver.signupStatus).toUpperCase() !== 'PENDING' && Number(driver.seatsAvailable) > 0;
     })
     .map(function (driver) {
       return { driverId: driver.driverId, homeZone: driver.homeZone, lastZone: driver.homeZone, remaining: Math.floor(Number(driver.seatsAvailable)), riderCount: 0 };

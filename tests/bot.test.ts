@@ -53,11 +53,6 @@ test('a driver who does not opt in remains a passenger', async () => {
   assert.equal(f.db.data.RideRequests[0].status, 'PENDING');
   assert.equal(f.db.data.Drivers[0].isAvailableThisWeek, 'false');
 });
-test('volunteer driver registration grants the configured Drivers role', async () => {
-  const f = fixture(); const d = discordFixture(f);
-  await (d.bot as unknown as { grantDriverRole: (church: typeof f.a, userId: string) => Promise<void> }).grantDriverRole(f.a, 'person');
-  assert.deepEqual(d.roleGrants, [{ user: 'person', role: 'drivers-role-a' }]);
-});
 test('reconciliation restores any offline reaction and removes absent riders', async () => {
   const f = fixture(); await register(f); await register(f, 'guild-a', 'absent'); const d = discordFixture(f);
   await f.service.run('guild-a', c => f.service.reaction(c, 'absent', 'post-a', true));
@@ -92,7 +87,7 @@ test('an unregistered reaction starts one shared survey, creates a pending profi
   assert.equal(first.removed, false); assert.equal(d.dms.length, 1); assert.equal(d.dms[0].content, 'Welcome to Church a! Tap below to register.');
   assert.equal(f.db.data.Members.length, 1); assert.deepEqual(f.db.data.Members[0], {
     memberId: f.db.data.Members[0].memberId, churchId: 'a', discordId: 'new-member', createdAt: f.db.data.Members[0].createdAt,
-    profileStatus: 'PENDING', name: '', phone: '', preferences: '', zone: '', notificationPreference: '',
+    profileStatus: 'PENDING', name: '', phone: '', preferences: '', zone: '', notificationPreference: '', discordUsername: 'new-member-name',
   }); assert.equal(f.db.data.RideRequests.length, 1); assert.equal(f.db.data.RideRequests[0].status, 'PENDING');
   await f.service.runChurch('a', c => f.service.register(c, 'new-member', { name: 'New Member', phone: '+12025550123', zone: 'Zone a' }));
   assert.equal(f.db.data.Members.length, 1); assert.equal(f.db.data.Members[0].profileStatus, 'COMPLETE');

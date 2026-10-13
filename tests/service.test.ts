@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { config } from '../src/config.js';
-import { validPhone, yesNo } from '../src/service.js';
+import { hasPhone, yesNo } from '../src/service.js';
 import { weekDate, localTime } from '../src/time.js';
 import { DateTime } from 'luxon';
 import { fixture, register } from './fixtures.js';
@@ -39,13 +39,13 @@ test('one registration is reused when the member requests a ride from another ch
   assert.equal(f.db.data.RideRequests[0].churchId, 'b');
   assert.ok(f.db.writes.every(w => w.row.churchId));
 });
-test('registration accepts shared zones and rejects invalid locations or phone numbers without writes', async () => {
+test('registration accepts shared zones and rejects invalid locations or a missing phone without writes', async () => {
   const f = fixture();
   await f.service.run('guild-a', c => f.service.register(c, 'person', { name: 'Name', phone: '+12025550123', zone: 'Zone b' }));
   assert.equal(f.db.data.Members[0].zone, 'Zone b');
   const f2 = fixture();
   await assert.rejects(f2.service.run('guild-a', c => f2.service.register(c, 'person', { name: 'Name', phone: '+12025550123', zone: 'Unknown' })), /location/);
-  await assert.rejects(f2.service.run('guild-a', c => f2.service.register(c, 'person', { name: 'Name', phone: '2025550123', zone: 'Zone a' })), /US phone/);
+  await assert.rejects(f2.service.run('guild-a', c => f2.service.register(c, 'person', { name: 'Name', phone: '  ', zone: 'Zone a' })), /phone number/);
   assert.equal(f2.db.writes.length, 0);
 });
 test('a member can volunteer as an active driver without being available this week', async () => {
@@ -93,11 +93,12 @@ test('Saturday 10am is informational; actual completion marker closes additions 
   await assert.rejects(f.service.run('guild-a', c => f.service.reaction(c, 'person', 'post-a', true)), /Assignments have run/);
   assert.equal(f.db.data.RideRequests[0].status, 'CANCELLED');
 });
-test('strict YES/NO parser and E.164 phone validation', () => {
+test('strict YES/NO parser; phones only need to be non-empty', () => {
   for (const text of ['YES', 'yes', 'YeS']) assert.equal(yesNo(text), true);
   for (const text of ['NO', 'no', 'No']) assert.equal(yesNo(text), false);
   for (const text of ['yes please', 'y', ' YES', 'NO\n', 'maybe']) assert.equal(yesNo(text), undefined);
-  assert.equal(validPhone('+12025550123'), true); assert.equal(validPhone('+442025550123'), false);
+  for (const phone of ['+12025550123', '(949) 555-1234', '+44 20 7946 0958']) assert.equal(hasPhone(phone), true);
+  for (const phone of ['', '   ', undefined]) assert.equal(hasPhone(phone), false);
 });
 test('church mapping is rechecked immediately before a write', async () => {
   const f = fixture(); const stale = { ...f.a }; f.a.discordGuildId = 'changed';

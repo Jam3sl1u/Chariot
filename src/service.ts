@@ -3,7 +3,8 @@ import { DateTime } from 'luxon';
 import type { Row, Storage, Tab } from './sheets.js';
 import { weekDate, late } from './time.js';
 
-export const validPhone = (phone: string) => /^\+1[2-9]\d{2}[2-9]\d{6}$/.test(phone);
+/** Phones are free text: only a non-empty answer is required. */
+export const hasPhone = (phone?: string) => !!phone?.trim();
 export const yesNo = (text: string) => text.toUpperCase() === 'YES' ? true : text.toUpperCase() === 'NO' ? false : undefined;
 export const truth = (text?: string) => text?.toLowerCase() === 'true';
 export class InputError extends Error {}
@@ -122,7 +123,7 @@ export class Service {
   private complete(member: Row | undefined) {
     // Legacy rows predate profileStatus. A pending row may also be completed by an
     // admin directly in Sheets, without requiring them to know an internal label.
-    return !!member && (member.profileStatus !== 'PENDING' || (!!member.name?.trim() && validPhone(member.phone) && !!member.zone?.trim()));
+    return !!member && (member.profileStatus !== 'PENDING' || (!!member.name?.trim() && hasPhone(member.phone) && !!member.zone?.trim()));
   }
   async member(church: Row, discordId: string) {
     const local = await this.localMember(church, discordId);
@@ -130,21 +131,21 @@ export class Service {
     return (await this.db.read('Members')).rows.find(row => row.discordId === discordId && this.complete(row));
   }
   /** Records an unregistered reactor without making them eligible for a ride. */
-  async beginRegistration(church: Row, discordId: string) {
+  async beginRegistration(church: Row, discordId: string, username?: string) {
     const existing = (await this.db.read('Members')).rows.find(row => row.discordId === discordId);
     if (existing) return existing;
     await this.patch('Members', church, { discordId }, {
       memberId: randomUUID(), createdAt: this.now().toISO()!, profileStatus: 'PENDING',
-      name: '', phone: '', preferences: '', zone: '', notificationPreference: '',
+      name: '', phone: '', preferences: '', zone: '', notificationPreference: '', discordUsername: username ?? '',
     });
     return this.localMember(church, discordId);
   }
   async register(church: Row, discordId: string, data: Row) {
-    if (!data.name?.trim() || !validPhone(data.phone)) throw new InputError('Enter your name and a US phone number such as +12025550123.');
+    if (!data.name?.trim() || !hasPhone(data.phone)) throw new InputError('Enter your name and a phone number.');
     const seats = Number(data.seatsAvailable);
     if (data.isDriver === 'true' && (!Number.isInteger(seats) || seats < 1 || seats > 20)) throw new InputError('Volunteer drivers must enter a whole number of seats from 1 to 20.');
     const zones = await this.rows('Zones', church);
-    if (data.zone !== 'Other / Not Listed' && !zones.some(z => z.zoneName === data.zone)) throw new InputError('That pickup location is no longer available. Run /register again.');
+    if (data.zone !== 'Other / Not Listed' && !zones.some(z => z.zoneName === data.zone)) throw new InputError('That pickup location is no longer available. Pick another one.');
     const allMembers = (await this.db.read('Members')).rows;
     const completed = allMembers.find(member => member.discordId === discordId && this.complete(member));
     if (completed) return completed;
@@ -153,7 +154,8 @@ export class Service {
     if (!profileChurch) throw new InputError('The temporary profile was removed. React to the weekly post again to start over.');
     await this.patch('Members', profileChurch, { discordId }, {
       memberId: pending?.memberId || randomUUID(), createdAt: pending?.createdAt || this.now().toISO()!,
-      name: data.name.trim(), phone: data.phone, preferences: data.preferences ?? '', zone: data.zone, notificationPreference: 'DISCORD_DM',
+      ...(data.discordUsername ? { discordUsername: data.discordUsername } : {}),
+      name: data.name.trim(), phone: data.phone.trim(), preferences: data.preferences ?? '', zone: data.zone, notificationPreference: 'DISCORD_DM',
       canDrive: String(data.isDriver === 'true'),
       profileStatus: 'COMPLETE',
     });
@@ -162,43 +164,49 @@ export class Service {
       const drivers = (await this.rows('Drivers', profileChurch)).filter(driver => driver.discordId === discordId);
       if (drivers.length > 1) throw new InputError('Duplicate driver rows; contact an admin.');
       const values = {
-        driverId: drivers[0]?.driverId || randomUUID(), memberId: member!.memberId, name: member!.name, discordId,
-        seatsAvailable: String(seats), homeZone: member!.zone, isActive: 'true', isAvailableThisWeek: 'false',
-        availabilityWeek: '', askedWeek: '', askMessageId: '', respondedWeek: '', signupStatus: 'COMPLETE',
+        memberId: member!.memberId, name: member!.name, discordId, seatsAvailable: String(seats), homeZone: member!.zone,
+        isActive: 'true', signupStatus: 'COMPLETE', ...(data.discordUsername ? { discordUsername: data.discordUsername } : {}),
       };
+      // An existing row keeps its availability: registering must not undo a reaction already given.
       if (drivers[0]) await this.patch('Drivers', profileChurch, { driverId: drivers[0].driverId }, values);
       else {
         if (!await this.resolveChurch(profileChurch.churchId)) throw new InputError('Church configuration changed. Please try again.');
-        await this.db.save('Drivers', { ...values, churchId: profileChurch.churchId });
+        await this.db.save('Drivers', { ...values, driverId: randomUUID(), churchId: profileChurch.churchId, isAvailableThisWeek: 'false', availabilityWeek: '', askedWeek: '', askMessageId: '', respondedWeek: '' });
       }
     }
     return member;
   }
   /** This church's own Members row, created from the shared profile when the person is registered elsewhere. */
-  private async ensureLocalMember(church: Row, discordId: string) {
+  private async ensureLocalMember(church: Row, discordId: string, username?: string) {
     let member = await this.localMember(church, discordId);
+    // Rows that predate the discordUsername column fill in the next time the person interacts.
+    if (member && username && !member.discordUsername) {
+      await this.patch('Members', church, { discordId }, { discordUsername: username });
+      member = await this.localMember(church, discordId);
+    }
     const profile = member || await this.member(church, discordId);
     if (!member && profile) {
       await this.patch('Members', church, { discordId }, {
         memberId: randomUUID(), createdAt: profile.createdAt || this.now().toISO()!, name: profile.name,
         phone: profile.phone, preferences: profile.preferences ?? '', zone: profile.zone,
         notificationPreference: profile.notificationPreference || 'DISCORD_DM', canDrive: profile.canDrive ?? '',
+        discordUsername: username ?? profile.discordUsername ?? '',
       });
       member = await this.localMember(church, discordId);
     }
     return member;
   }
-  async request(church: Row, discordId: string, week: string) {
-    const member = await this.ensureLocalMember(church, discordId);
+  async request(church: Row, discordId: string, week: string, username?: string) {
+    const member = await this.ensureLocalMember(church, discordId, username);
     if (!member) throw new InputError('Please run /register in the church’s weekly rides channel first.');
     const requests = (await this.rows('RideRequests', church)).filter(r => r.memberId === member.memberId && r.weekDate === week);
     if (requests.length > 1) throw new InputError('Duplicate ride requests; contact an admin.');
     return { member, ride: requests[0] };
   }
-  async reaction(church: Row, discordId: string, messageId: string, added: boolean) {
+  async reaction(church: Row, discordId: string, messageId: string, added: boolean, username?: string) {
     const week = weekDate(church, this.now());
     if (messageId !== church.activeMessageId || church.activeWeekDate !== week) return;
-    const { member, ride } = await this.request(church, discordId, week);
+    const { member, ride } = await this.request(church, discordId, week, added ? username : undefined);
     const key = { memberId: member.memberId, weekDate: week };
     if (added && church.assignmentCompletedWeek === week && ride?.status !== 'PENDING') throw new InputError('Assignments have run for this week. Please contact an admin.');
     if (!added && !ride) return;
@@ -222,14 +230,14 @@ export class Service {
     if (local && local.canDrive?.toLowerCase() !== String(value)) await this.patch('Members', church, { discordId }, { canDrive: String(value) });
   }
   /**
-   * Handles a reaction on a church's current driver ask. Only a reaction makes anyone available:
-   * signing up never does. A person with no Drivers row gets a placeholder row (PENDING, default
-   * seats, not available) and a prompt; their next reaction then opts them in. A placeholder whose
-   * owner has not finished registering cannot be made available, so they are prompted again instead.
+   * Handles a reaction on a church's current driver ask. A reaction makes the person available
+   * straight away, registered or not. Someone with no Drivers row gets a placeholder row (PENDING,
+   * default seats) that their sign-up form later completes; `register` and `seats` tell the caller
+   * which prompt to send. `unconfirmed` marks an available placeholder whose seats are still a guess.
    * `copy` means they already drive for another church; the caller creates this church's row from
    * `source` (same seats and home zone) and marks them available.
    */
-  async driverReaction(church: Row, discordId: string, messageId: string, added: boolean): Promise<DriverReaction> {
+  async driverReaction(church: Row, discordId: string, messageId: string, added: boolean, username?: string): Promise<DriverReaction> {
     const week = weekDate(church, this.now());
     if (church.driverAskMessageId !== messageId || church.driverAskWeek !== week) return { status: 'ignored' };
     const rows = (await this.rows('Drivers', church)).filter(d => d.discordId === discordId);
@@ -242,28 +250,28 @@ export class Service {
         if (!added) return { status: 'ignored' };
         throw new InputError('Your driver access for this church is turned off. Ask an admin.');
       }
-      const placeholder = row.signupStatus === 'PENDING';
-      if (added && placeholder && !await this.member(church, discordId)) return { status: 'register' };
       await this.patch('Drivers', church, { driverId: row.driverId }, {
         isAvailableThisWeek: String(added), availabilityWeek: week, respondedWeek: added ? week : '',
+        ...(added && username ? { discordUsername: username } : {}),
       });
-      return added && placeholder ? { status: 'applied', unconfirmed: true } : { status: 'applied' };
+      return added && row.signupStatus === 'PENDING' ? { status: 'applied', unconfirmed: true } : { status: 'applied' };
     }
     if (!added) return { status: 'ignored' };
     const profile = await this.member(church, discordId);
     const source = profile ? (await this.db.read('Drivers')).rows.find(d => d.discordId === discordId && d.churchId !== church.churchId && d.isActive?.toLowerCase() !== 'false' && Number(d.seatsAvailable) >= 1) : undefined;
     if (source) return { status: 'copy', source };
-    await this.addPlaceholderDriver(church, discordId, profile);
+    await this.addPlaceholderDriver(church, discordId, profile, week, username);
     return { status: profile ? 'seats' : 'register' };
   }
-  /** A Drivers row created from a reaction before sign-up: default seats, not available, visibly PENDING. */
-  private async addPlaceholderDriver(church: Row, discordId: string, profile: Row | undefined) {
-    const member = profile ? await this.ensureLocalMember(church, discordId) : await this.localMember(church, discordId);
+  /** A Drivers row created from a reaction before sign-up: default seats, available this week, visibly PENDING. */
+  private async addPlaceholderDriver(church: Row, discordId: string, profile: Row | undefined, week: string, username?: string) {
+    const member = profile ? await this.ensureLocalMember(church, discordId, username) : await this.localMember(church, discordId);
     if (!await this.resolveChurch(church.churchId)) throw new InputError('Church configuration changed. Please try again.');
     await this.db.save('Drivers', {
       driverId: randomUUID(), churchId: church.churchId, memberId: member?.memberId ?? '', name: profile?.name ?? '', discordId,
-      seatsAvailable: String(DEFAULT_SEATS), homeZone: profile?.zone ?? '', isActive: 'true', isAvailableThisWeek: 'false',
-      availabilityWeek: '', askedWeek: '', askMessageId: '', respondedWeek: '', signupStatus: 'PENDING',
+      discordUsername: username ?? profile?.discordUsername ?? '',
+      seatsAvailable: String(DEFAULT_SEATS), homeZone: profile?.zone ?? '', isActive: 'true', isAvailableThisWeek: 'true',
+      availabilityWeek: week, askedWeek: '', askMessageId: '', respondedWeek: week, signupStatus: 'PENDING',
     });
     await this.setCanDrive(church, discordId, true);
   }
@@ -272,18 +280,18 @@ export class Service {
    * row. They are not available until they react, unless `available` is set because the reaction itself
    * is what triggered this.
    */
-  async addDriver(church: Row, discordId: string, options: { seats: number; homeZone?: string; available?: boolean }) {
+  async addDriver(church: Row, discordId: string, options: { seats: number; homeZone?: string; available?: boolean; username?: string }) {
     if (!Number.isInteger(options.seats) || options.seats < 1 || options.seats > 20) throw new InputError('Enter a whole number of seats from 1 to 20.');
     const profile = await this.member(church, discordId);
     if (!profile) throw new InputError('Finish registration first, then react to the driver post again.');
     const existing = (await this.rows('Drivers', church)).filter(d => d.discordId === discordId);
     if (existing.length > 1) throw new InputError('Duplicate driver rows for you in this church; contact an admin.');
     if (existing[0]?.isActive?.toLowerCase() === 'false') throw new InputError('Your driver access for this church is turned off. Ask an admin.');
-    const member = await this.ensureLocalMember(church, discordId);
+    const member = await this.ensureLocalMember(church, discordId, options.username);
     if (!member) throw new InputError('Finish registration first, then react to the driver post again.');
     const homeZone = options.homeZone || existing[0]?.homeZone || profile.zone;
     if (existing[0]) {
-      const values = { memberId: member.memberId, name: profile.name, seatsAvailable: String(options.seats), homeZone, signupStatus: 'COMPLETE' };
+      const values = { memberId: member.memberId, name: profile.name, seatsAvailable: String(options.seats), homeZone, signupStatus: 'COMPLETE', ...(options.username ? { discordUsername: options.username } : {}) };
       await this.patch('Drivers', church, { driverId: existing[0].driverId }, values);
       await this.setCanDrive(church, discordId, true);
       return { ...existing[0], ...values };
@@ -292,7 +300,7 @@ export class Service {
     const week = weekDate(church, this.now());
     const row = {
       driverId: randomUUID(), churchId: church.churchId, memberId: member.memberId, name: profile.name, discordId,
-      seatsAvailable: String(options.seats), homeZone, isActive: 'true', signupStatus: 'COMPLETE',
+      discordUsername: options.username ?? profile.discordUsername ?? '', seatsAvailable: String(options.seats), homeZone, isActive: 'true', signupStatus: 'COMPLETE',
       isAvailableThisWeek: String(!!options.available), availabilityWeek: options.available ? week : '',
       askedWeek: '', askMessageId: '', respondedWeek: options.available ? week : '',
     };

@@ -14,6 +14,8 @@ export interface AssignmentDriver {
   homeZone: string;
   seatsAvailable: number;
   isAvailableThisWeek: boolean;
+  /** PENDING = reacted but has not finished sign-up; such a driver is never assigned riders. Blank counts as complete. */
+  signupStatus?: string;
 }
 
 export interface AssignmentZone {
@@ -79,7 +81,7 @@ export function assignByZone(input: AssignmentInput): Assignment[] {
   };
 
   const eligibleDrivers = drivers
-    .filter(driver => driver.churchId === churchId && driver.isAvailableThisWeek && driver.seatsAvailable > 0)
+    .filter(driver => driver.churchId === churchId && driver.isAvailableThisWeek && driver.signupStatus?.toUpperCase() !== 'PENDING' && driver.seatsAvailable > 0)
     .map(driver => ({ ...driver, remaining: Math.floor(driver.seatsAvailable), riderCount: 0, lastZone: driver.homeZone }));
 
   const eligibleRiders = riders
