@@ -195,3 +195,13 @@ test('if the greeting cannot be saved it is removed and the run stops before any
   await assert.rejects(run(), /the greeting was posted but could not be saved to the Sheet, so it was removed — rate limited \(HTTP 429\).*Nothing else was changed\./);
   assert.equal(d.channels.get('channel-a')!.history.size, 0);
 });
+
+test('only the greeting carries a Register button; the church messages carry none', async () => {
+  for (const [type, channel, button] of [['post', 'channel-a', /register:a:rides/], ['ask', 'drivers-a', /register:a:drivers/]] as const) {
+    const { d, run } = setup(type); await run();
+    const [greeting, ...rest] = d.channels.get(channel)!.sent.map(m => JSON.stringify((m as unknown as { components: unknown }).components ?? []));
+    assert.match(greeting, button, `${type}: greeting has the button`);
+    assert.equal(rest.length, 2);
+    for (const components of rest) assert.doesNotMatch(components, /register:/, `${type}: church message has no button`);
+  }
+});

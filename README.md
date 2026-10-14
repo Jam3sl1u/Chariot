@@ -45,7 +45,7 @@ Status reflects the code on `main`. "Not built" means no code exists for it yet.
 | ID | Requirement (short) | Status | Where |
 |---|---|---|---|
 | MVP-000 | Resolve `(guild, channel, message)` → one `churchId` via `activeMessageId`; drop unknown/ambiguous | Done | `src/service.ts`, `src/bot.ts` |
-| MVP-001 | One registration form (name, phone, preferences, seats for drivers, location), opened from a **Register** button under each post or from the DM an unregistered reactor gets; reusable across churches. A reactor gets a PENDING member row until the form is done. **Deviates from PRD (approved by James):** the first reaction also writes a PENDING `Members` row and a `RideRequests` row (the PRD says neither), and phone is free text rather than E.164. | Done, awaiting the manual acceptance test | `src/service.ts`, `src/bot.ts` |
+| MVP-001 | One registration form (name, phone, preferences, seats for drivers, location), opened from a **Register** button under each post (in a broadcast, only under the greeting) or from the DM an unregistered reactor gets; reusable across churches. A reactor gets a PENDING member row until the form is done. **Deviates from PRD (approved by James):** the first reaction also writes a PENDING `Members` row and a `RideRequests` row (the PRD says neither), and phone is free text rather than E.164. | Done, awaiting the manual acceptance test | `src/service.ts`, `src/bot.ts` |
 | MVP-002 | Any emoji reaction add/remove creates/cancels a `RideRequests` row for that church and week | Done | `src/service.ts` |
 | MVP-003 | +1/guest flow | Deferred (PRD: decide later) | — |
 | MVP-004 | Driver YES/NO reply sets `isAvailableThisWeek` for that driver's church | Done | `src/service.ts`, `src/bot.ts` |

@@ -117,6 +117,7 @@ subcommand. It is an addition to PRD §29, not part of it.
 
 Rules:
 
+- **Register button:** the greeting carries the one button (**Register for rides** for `post`, **Sign up to drive** for `ask`, tied to the first church listed; registration is shared across churches). The church messages below it carry none. `/rides post` and `/rides ask-drivers` run on their own still put a button on their post.
 - Run it as an admin (Manage Server). **`post` runs only in the shared rides channel**
   (`weeklyPostChannelId`) and **`ask` runs only in the driver channel** (`driverAskChannelId`).
   Every listed church must use that guild and the same channel for its type. The greeting goes

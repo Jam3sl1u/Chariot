@@ -365,14 +365,15 @@ export class Bot {
    * Posts the church's weekly ride request. Without `replace`, an existing post for the week
    * is kept. With it, the new post goes live first, then the old one is deleted and this
    * week's pending requests are cancelled, since their reactions went with the old post.
+   * `button` false leaves off the Register button (a broadcast puts one on its greeting instead).
    */
-  async post(church: Row, replace = false) {
+  async post(church: Row, replace = false, button = true) {
     const week = weekDate(church, this.service.now());
     const current = !!church.activeMessageId && church.activeWeekDate === week;
     if (current && !replace) return { replaced: false, removed: true, cleared: 0 };
     if (!church.weeklyMessageTemplate?.trim()) throw new InputError('Set weeklyMessageTemplate in Churches before posting.');
     const channel = await this.channel(church);
-    const message = await channel.send({ content: church.weeklyMessageTemplate, components: [registerRow(church.churchId, 'rides', 'Register for rides')], allowedMentions: { parse: [] } });
+    const message = await channel.send({ content: church.weeklyMessageTemplate, components: button ? [registerRow(church.churchId, 'rides', 'Register for rides')] : [], allowedMentions: { parse: [] } });
     try { await this.service.patch('Churches', church, {}, { activeMessageId: message.id, activeWeekDate: week }); }
     catch (error) { await this.deleteOwned(channel, message.id); throw error; } // never leave a live-looking post the Sheet doesn't know about
     if (!current) return { replaced: false, removed: true, cleared: 0 };
@@ -467,13 +468,13 @@ export class Bot {
     await this.service.patch('Churches', church, {}, { availabilityResetWeek: week });
   }
   /** Posts the driver ask. `replace` swaps in a fresh post and resets drivers, like `post` does for riders. */
-  private async ask(church: Row, replace = false) {
+  private async ask(church: Row, replace = false, button = true) {
     const week = weekDate(church, this.service.now());
     const current = !!church.driverAskMessageId && church.driverAskWeek === week;
     if (current && !replace) return { replaced: false, removed: true, cleared: 0 };
     if (!church.driverAskMessageTemplate?.trim()) throw new InputError('Set driverAskMessageTemplate in Churches before posting.');
     const channel = await this.channel(church, church.driverAskChannelId, 'driver ask');
-    const message = await channel.send({ content: church.driverAskMessageTemplate.replaceAll('{churchName}', church.churchName).replaceAll('{weekDate}', week), components: [registerRow(church.churchId, 'drivers', 'Sign up to drive')], allowedMentions: { parse: [] } });
+    const message = await channel.send({ content: church.driverAskMessageTemplate.replaceAll('{churchName}', church.churchName).replaceAll('{weekDate}', week), components: button ? [registerRow(church.churchId, 'drivers', 'Sign up to drive')] : [], allowedMentions: { parse: [] } });
     try { await this.service.patch('Churches', church, {}, { driverAskMessageId: message.id, driverAskWeek: week }); }
     catch (error) { await this.deleteOwned(channel, message.id); throw error; }
     if (!current) return { replaced: false, removed: true, cleared: 0 };
@@ -507,7 +508,9 @@ export class Bot {
       const channel = await this.channel(churches[0], targetOf(churches[0]), 'broadcast');
       const previous = spec.row.greetingWeek === week ? spec.row.greetingMessageId : '';
       let greeting: Awaited<ReturnType<typeof channel.send>>;
-      try { greeting = await channel.send({ content: spec.greeting.replaceAll('{weekDate}', week), allowedMentions: { parse: [] } }); }
+      // The greeting carries the one Register button; the church messages below have none. Registration is shared across churches, so the first church's button serves all.
+      const greetingButton = spec.type === 'post' ? registerRow(churches[0].churchId, 'rides', 'Register for rides') : registerRow(churches[0].churchId, 'drivers', 'Sign up to drive');
+      try { greeting = await channel.send({ content: spec.greeting.replaceAll('{weekDate}', week), components: [greetingButton], allowedMentions: { parse: [] } }); }
       catch (error) { this.report(`Broadcast ${spec.id} greeting`, error); throw new InputError(`Broadcast "${spec.id}" did not run: could not post the greeting in the channel ending ${tail(targetOf(churches[0]))} — ${this.describe(error)}. Nothing was changed.`); }
       try { await this.service.patchBroadcast(spec.id, { greetingMessageId: greeting.id, greetingWeek: week }); }
       catch (error) {
@@ -520,10 +523,10 @@ export class Bot {
       for (const church of churches) {
         try {
           const result = await this.service.runChurch(church.churchId, async current => {
-            if (spec.type === 'post') return this.post(current, true);
+            if (spec.type === 'post') return this.post(current, true, false);
             // A replace resets every driver itself; the gentler reset is only for a first post.
             if (!(current.driverAskMessageId && current.driverAskWeek === week)) await this.reset(current);
-            return this.ask(current, true);
+            return this.ask(current, true, false);
           });
           if (!result) throw new InputError('Church configuration changed.');
           const noun = spec.type === 'post' ? 'requests cancelled' : 'drivers reset';
