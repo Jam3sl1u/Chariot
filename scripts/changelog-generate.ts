@@ -12,9 +12,35 @@ function git(...args: string[]): string {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trimEnd();
 }
 
+function refExists(ref: string): boolean {
+  try {
+    git('rev-parse', '--verify', '--quiet', ref);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * GitHub Actions checks out a detached commit for pull requests, so a local
+ * `main` branch is not guaranteed to exist. Prefer the PR base, then the
+ * fetched remote default branch, while retaining local use outside Actions.
+ */
+function historyRef(): string {
+  const candidates = [
+    process.env.GITHUB_BASE_REF && `origin/${process.env.GITHUB_BASE_REF}`,
+    'origin/main',
+    'main',
+    'HEAD',
+  ].filter((candidate): candidate is string => Boolean(candidate));
+  const ref = candidates.find(refExists);
+  if (!ref) throw new Error('Unable to locate a commit history reference.');
+  return ref;
+}
+
 type Commit = { sha: string; timestamp: string; subject: string };
 function commits(): Commit[] {
-  const output = git('log', 'main', '--reverse', '--format=%H%x1f%cI%x1f%s%x1e');
+  const output = git('log', historyRef(), '--reverse', '--format=%H%x1f%cI%x1f%s%x1e');
   return output.split('\x1e').filter(Boolean).map(row => {
     const [sha, timestamp, subject] = row.split('\x1f');
     return { sha: sha.trim(), timestamp: timestamp.trim(), subject: subject.trim() };
