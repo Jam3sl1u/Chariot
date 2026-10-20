@@ -51,6 +51,13 @@ If one task is blocked, work on another unrelated one rather than stalling the w
 4. **Keep docs in step.** Update `docs/discord-bot.md` and the README status table when behavior,
    commands, or Sheet columns change.
 
+## Repository workflow
+
+- Use concise PR titles beginning with `feat:`, `fix:`, `docs:`, `test:`, `ci:`, `chore:` or
+  `refactor:`. The changelog automation uses this title after a squash merge.
+- Do not manually edit the README content between `<!-- changelog:start -->` and
+  `<!-- changelog:end -->`, or `CHANGELOG.md`; run `npm run changelog:generate` instead.
+
 ## Safety
 
 - Never commit `.env`, `service-account-key.json` or any token (both are gitignored).

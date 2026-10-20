@@ -13,7 +13,9 @@
     "verify:assignment-test": "tsx --env-file-if-exists=.env scripts/verify-assignment-test.ts",
     "typecheck:verification": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.ts"
+    "test": "tsx --test tests/*.test.ts",
+    "changelog:generate": "tsx scripts/changelog-generate.ts --write",
+    "changelog:check": "tsx scripts/changelog-generate.ts --check"
   },
   "engines": {
     "node": ">=22.12.0"
