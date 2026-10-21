@@ -119,7 +119,7 @@ build these move to once the MVP graduation criteria (PRD §29.10) are met.
 <!-- changelog:start -->
 ## Change history
 
-- **Changes** — 2026-10-21 — [Merge pull request #5 from Jam3sl1u/fix-changelog-release](https://github.com/Jam3sl1u/Chariot/commit/41b5b28ba9a94186c3fa743ae4380de8d5414e53) (41b5b28)
+- **Changes** — **v2026.10.21.1** — 2026-10-21 — [Merge pull request #5 from Jam3sl1u/fix-changelog-release](https://github.com/Jam3sl1u/Chariot/commit/41b5b28ba9a94186c3fa743ae4380de8d5414e53) (41b5b28)
 - **Fixes** — 2026-10-21 — [refresh the changelog when no GitHub App is configured](https://github.com/Jam3sl1u/Chariot/commit/1d7b6a98907917fe5bdcb4dcc610e5049c777cae) (1d7b6a9)
 - **Changes** — 2026-10-21 — [Merge pull request #4 from Jam3sl1u/fix-release-checks](https://github.com/Jam3sl1u/Chariot/commit/902c21c76aa52911e3cd0854e3d67ca6b251266a) (902c21c)
 - **Fixes** — 2026-10-21 — [accept the GitHub App client id in the release workflow](https://github.com/Jam3sl1u/Chariot/commit/60f41c965e37ac10bc121b82e4bb498d8fe5e47a) (60f41c9)
