@@ -43,18 +43,22 @@ jobs:
       - run: npx tsx scripts/changelog-release.ts
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
-      - name: Open or update the changelog pull request
+      - name: Publish the changelog synchronization
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
           GH_REPO: ${{ github.repository }}
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
           CHANGELOG_BRANCH: automation/changelog
         run: |
           if git diff --quiet -- README.md CHANGELOG.md; then
             exit 0
           fi
-          git switch -C "$CHANGELOG_BRANCH"
           git add README.md CHANGELOG.md
           git commit -m 'chore(release): sync changelog'
+          if [ -z "$APP_TOKEN" ]; then
+            git push origin HEAD:main
+            exit 0
+          fi
           git push --force-with-lease origin "HEAD:$CHANGELOG_BRANCH"
           PR_NUMBER="$(gh pr list --head "$CHANGELOG_BRANCH" --base main --state open --json number --jq '.[0].number')"
           if [ -z "$PR_NUMBER" ]; then
