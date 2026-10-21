@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { classifyChange, isAutomationChange, renderChangelog, renderHistory, replaceGeneratedBlock, type ChangeRecord } from './changelog.js';
+import { changelogMatchesLandingCommit, classifyChange, isAutomationChange, renderChangelog, renderHistory, replaceGeneratedBlock, type ChangeRecord } from './changelog.js';
 
 const root = resolve(import.meta.dirname, '..');
 const mode = process.argv.includes('--check') ? 'check' : 'write';
@@ -39,8 +39,8 @@ function historyRef(): string {
 }
 
 type Commit = { sha: string; timestamp: string; subject: string };
-function commits(): Commit[] {
-  const output = git('log', historyRef(), '--reverse', '--format=%H%x1f%cI%x1f%s%x1e');
+function commits(ref: string): Commit[] {
+  const output = git('log', ref, '--reverse', '--format=%H%x1f%cI%x1f%s%x1e');
   return output.split('\x1e').filter(Boolean).map(row => {
     const [sha, timestamp, subject] = row.split('\x1f');
     return { sha: sha.trim(), timestamp: timestamp.trim(), subject: subject.trim() };
@@ -51,8 +51,8 @@ function changedPaths(sha: string): string[] {
   return git('diff-tree', '--no-commit-id', '--name-only', '-r', sha).split('\n').filter(Boolean);
 }
 
-function records(): ChangeRecord[] {
-  return commits().filter(commit => !isAutomationChange(commit.subject)).map(commit => ({
+function records(ref: string): ChangeRecord[] {
+  return commits(ref).filter(commit => !isAutomationChange(commit.subject)).map(commit => ({
     sha: commit.sha,
     date: commit.timestamp.slice(0, 10),
     summary: commit.subject,
@@ -62,19 +62,41 @@ function records(): ChangeRecord[] {
   })).reverse();
 }
 
-const changes = records();
-const history = renderHistory(changes);
+function rendered(ref: string, readme: string): { readme: string; changelog: string } {
+  const changes = records(ref);
+  const history = renderHistory(changes);
+  return { readme: replaceGeneratedBlock(readme, history), changelog: renderChangelog(changes) };
+}
+
 const readmePath = resolve(root, 'README.md');
 const changelogPath = resolve(root, 'CHANGELOG.md');
-const expectedReadme = replaceGeneratedBlock(readFileSync(readmePath, 'utf8'), history);
-const expectedChangelog = renderChangelog(changes);
+const ref = historyRef();
+const readme = readFileSync(readmePath, 'utf8');
+const expected = rendered(ref, readme);
 
 if (mode === 'check') {
   const actualChangelog = readFileSync(changelogPath, 'utf8');
-  if (readFileSync(readmePath, 'utf8') !== expectedReadme || actualChangelog !== expectedChangelog) {
+  const matchesRef = readme === expected.readme && actualChangelog === expected.changelog;
+  const parent = `${ref}^`;
+  const matchesFirstParent = refExists(parent) && (() => {
+    const earlier = rendered(parent, readme);
+    return readme === earlier.readme && actualChangelog === earlier.changelog;
+  })();
+  let checkingHead = false;
+  try {
+    checkingHead = git('rev-parse', ref) === git('rev-parse', 'HEAD');
+  } catch {
+    checkingHead = false;
+  }
+  if (!changelogMatchesLandingCommit({
+    matchesRef,
+    matchesFirstParent,
+    checkingHead,
+    eventName: process.env.GITHUB_EVENT_NAME,
+  })) {
     throw new Error('README.md or CHANGELOG.md is out of date. Run npm run changelog:generate.');
   }
 } else {
-  writeFileSync(readmePath, expectedReadme);
-  writeFileSync(changelogPath, expectedChangelog);
+  writeFileSync(readmePath, expected.readme);
+  writeFileSync(changelogPath, expected.changelog);
 }

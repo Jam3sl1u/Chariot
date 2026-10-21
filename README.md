@@ -43,15 +43,14 @@ Setup, configuration and the exact manual acceptance test live in
 
 Every branch push runs type-checking and tests. Open pull requests also receive a changelog preview
 comment; use a concise title beginning with `feat:`, `fix:`, `docs:`, `test:`, `ci:`, `chore:` or
-`refactor:`. Once the repository’s GitHub App and ruleset are configured, each squash merge to `main`
-creates a dated GitHub Release and automatically updates the complete change history below. Do not
-edit the content between the changelog markers by hand—run `npm run changelog:generate` instead.
+`refactor:`. Each merge to `main` creates a dated GitHub Release and a follow-up that updates the
+change history below. The landing commit itself is not listed until that follow-up. Do not edit the
+content between the changelog markers by hand—run `npm run changelog:generate` instead.
 
-Before merging the automation workflow, create a repository-scoped GitHub App with **Contents**,
-**Pull requests**, and **Issues** read/write permissions; install it only on this repository. Add its
-Client ID as the `CHANGELOG_APP_CLIENT_ID` repository variable and its private key as the
-`CHANGELOG_APP_PRIVATE_KEY` Actions secret. Enable auto-merge before merging the workflow. These are
-live GitHub settings and are intentionally not changed by this repository code.
+The follow-up uses the Actions token and merges its own pull request. To attribute those commits to a
+GitHub App instead, install a repository-scoped app with **Contents**, **Pull requests**, and
+**Issues** read/write on this repository only. Set its client ID as `CHANGELOG_APP_CLIENT_ID` and its
+private key as `CHANGELOG_APP_PRIVATE_KEY`. Those settings live in GitHub, not in this repository.
 
 ## MVP requirement status (PRD §29.6)
 
@@ -119,6 +118,8 @@ build these move to once the MVP graduation criteria (PRD §29.10) are met.
 <!-- changelog:start -->
 ## Change history
 
+- **Changes** — 2026-10-21 — [Merge pull request #4 from Jam3sl1u/fix-release-checks](https://github.com/Jam3sl1u/Chariot/commit/902c21c76aa52911e3cd0854e3d67ca6b251266a) (902c21c)
+- **Fixes** — 2026-10-21 — [accept the GitHub App client id in the release workflow](https://github.com/Jam3sl1u/Chariot/commit/60f41c965e37ac10bc121b82e4bb498d8fe5e47a) (60f41c9)
 - **Changes** — 2026-10-20 — [Merge pull request #3 from Jam3sl1u/automated-changelog-workflow](https://github.com/Jam3sl1u/Chariot/commit/43d2e034a3a38e7627bcdd68f7977715b62d460b) (43d2e03)
 - **Fixes** — 2026-10-20 — [resolve changelog history in CI](https://github.com/Jam3sl1u/Chariot/commit/7ffda91765ba69970ca8fea9774bc39201d986ae) (7ffda91)
 - **Changes** — 2026-10-20 — [Enhance documentation and scripts for changelog management. Add new commands for generating and checking changelogs in package.json. Update AGENTS.md and READM…](https://github.com/Jam3sl1u/Chariot/commit/b554c3d4b25cf7c062777243dd849399f2b989ed) (b554c3d)

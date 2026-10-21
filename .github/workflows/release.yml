@@ -5,7 +5,8 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
   issues: write
 
 concurrency:
@@ -19,6 +20,7 @@ jobs:
     steps:
       - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         id: app-token
+        if: vars.CHANGELOG_APP_CLIENT_ID != ''
         with:
           client-id: ${{ vars.CHANGELOG_APP_CLIENT_ID }}
           private-key: ${{ secrets.CHANGELOG_APP_PRIVATE_KEY }}
@@ -28,26 +30,29 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
-          token: ${{ steps.app-token.outputs.token }}
+          token: ${{ steps.app-token.outputs.token || github.token }}
       - uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.4.0
         with:
           node-version: 22.12.0
           cache: npm
       - run: npm ci
+      - name: Configure git
+        run: |
+          git config user.name 'Chariot changelog bot[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
       - run: npx tsx scripts/changelog-release.ts
         env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
       - name: Open or update the changelog pull request
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
+          GH_REPO: ${{ github.repository }}
           CHANGELOG_BRANCH: automation/changelog
         run: |
           if git diff --quiet -- README.md CHANGELOG.md; then
             exit 0
           fi
           git switch -C "$CHANGELOG_BRANCH"
-          git config user.name 'Chariot changelog bot[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add README.md CHANGELOG.md
           git commit -m 'chore(release): sync changelog'
           git push --force-with-lease origin "HEAD:$CHANGELOG_BRANCH"
@@ -56,12 +61,14 @@ jobs:
             PR_URL="$(gh pr create --base main --head "$CHANGELOG_BRANCH" --title 'chore(release): sync changelog' --body 'Automated changelog and README synchronization.')"
             PR_NUMBER="${PR_URL##*/}"
           fi
+          gh label create release-automation --color 1D76DB --description "Automated changelog synchronization" --force
           gh pr edit "$PR_NUMBER" --add-label release-automation
-          gh pr merge "$PR_NUMBER" --auto --squash
+          gh pr merge "$PR_NUMBER" --squash
       - name: Open an automation failure issue
         if: failure()
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           ISSUE_NUMBER="$(gh issue list --state open --search 'changelog automation failure in:title' --json number --jq '.[0].number')"
           if [ -z "$ISSUE_NUMBER" ]; then

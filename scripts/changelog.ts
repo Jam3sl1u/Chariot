@@ -78,6 +78,26 @@ export function isAutomationChange(title: string, labels: string[] = []): boolea
     || /^chore(?:\(release\))?:\s*sync changelog/i.test(title.trim());
 }
 
+/**
+ * A push of the landing commit cannot list itself. Accept the changelog when it
+ * matches that commit, or when this push is that commit and the files still match
+ * its first parent. Pull requests stay strict so a hand edit cannot ride along.
+ */
+export function changelogMatchesLandingCommit({
+  matchesRef,
+  matchesFirstParent,
+  checkingHead,
+  eventName,
+}: {
+  matchesRef: boolean;
+  matchesFirstParent: boolean;
+  checkingHead: boolean;
+  eventName?: string;
+}): boolean {
+  if (matchesRef) return true;
+  return eventName === 'push' && checkingHead && matchesFirstParent;
+}
+
 /** Determine the next vYYYY.MM.DD.N tag in the configured release timezone. */
 export function nextCalendarVersion(existingTags: string[], timestamp: Date, timezone = 'America/Los_Angeles'): string {
   const date = new Intl.DateTimeFormat('en-CA', {

@@ -4,6 +4,8 @@ Automatically generated from commits merged into `main`.
 
 ## Change history
 
+- **Changes** — 2026-10-21 — [Merge pull request #4 from Jam3sl1u/fix-release-checks](https://github.com/Jam3sl1u/Chariot/commit/902c21c76aa52911e3cd0854e3d67ca6b251266a) (902c21c)
+- **Fixes** — 2026-10-21 — [accept the GitHub App client id in the release workflow](https://github.com/Jam3sl1u/Chariot/commit/60f41c965e37ac10bc121b82e4bb498d8fe5e47a) (60f41c9)
 - **Changes** — 2026-10-20 — [Merge pull request #3 from Jam3sl1u/automated-changelog-workflow](https://github.com/Jam3sl1u/Chariot/commit/43d2e034a3a38e7627bcdd68f7977715b62d460b) (43d2e03)
 - **Fixes** — 2026-10-20 — [resolve changelog history in CI](https://github.com/Jam3sl1u/Chariot/commit/7ffda91765ba69970ca8fea9774bc39201d986ae) (7ffda91)
 - **Changes** — 2026-10-20 — [Enhance documentation and scripts for changelog management. Add new commands for generating and checking changelogs in package.json. Update AGENTS.md and READM…](https://github.com/Jam3sl1u/Chariot/commit/b554c3d4b25cf7c062777243dd849399f2b989ed) (b554c3d)
