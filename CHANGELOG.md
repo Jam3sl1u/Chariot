@@ -4,6 +4,9 @@ Automatically generated from commits merged into `main`.
 
 ## Change history
 
+- **Changes** — 2026-10-20 — [Merge pull request #3 from Jam3sl1u/automated-changelog-workflow](https://github.com/Jam3sl1u/Chariot/commit/43d2e034a3a38e7627bcdd68f7977715b62d460b) (43d2e03)
+- **Fixes** — 2026-10-20 — [resolve changelog history in CI](https://github.com/Jam3sl1u/Chariot/commit/7ffda91765ba69970ca8fea9774bc39201d986ae) (7ffda91)
+- **Changes** — 2026-10-20 — [Enhance documentation and scripts for changelog management. Add new commands for generating and checking changelogs in package.json. Update AGENTS.md and READM…](https://github.com/Jam3sl1u/Chariot/commit/b554c3d4b25cf7c062777243dd849399f2b989ed) (b554c3d)
 - **Changes** — 2026-10-14 — [Update README and Discord bot logic to clarify the behavior of the Register button. Ensure that only the greeting message carries the Register button for rides…](https://github.com/Jam3sl1u/Chariot/commit/b84315e968214b5afe8f9d1157c42b62ec7203b2) (b84315e)
 - **Changes** — 2026-10-13 — [Merge pull request #2 from Jam3sl1u/scheduled-flows](https://github.com/Jam3sl1u/Chariot/commit/2bb199dca27807bdcc0fcd4cb24f07b0d1405400) (2bb199d)
 - **Changes** — 2026-10-13 — [Merge origin/main into scheduled-flows.](https://github.com/Jam3sl1u/Chariot/commit/8f5bb1f2a08a9b4bc458a9be6232e69eb2114081) (8f5bb1f)

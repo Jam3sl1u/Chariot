@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 concurrency:
   group: changelog-release-main
@@ -16,7 +17,7 @@ jobs:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/create-github-app-token@3ff1caaa28b64c9cc276ce0a02e2ff584f3900c5 # v3
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         id: app-token
         with:
           client-id: ${{ vars.CHANGELOG_APP_CLIENT_ID }}
@@ -60,7 +61,7 @@ jobs:
       - name: Open an automation failure issue
         if: failure()
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
         run: |
           ISSUE_NUMBER="$(gh issue list --state open --search 'changelog automation failure in:title' --json number --jq '.[0].number')"
           if [ -z "$ISSUE_NUMBER" ]; then
