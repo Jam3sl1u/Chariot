@@ -47,10 +47,11 @@ comment; use a concise title beginning with `feat:`, `fix:`, `docs:`, `test:`, `
 change history below. The landing commit itself is not listed until that follow-up. Do not edit the
 content between the changelog markers by hand—run `npm run changelog:generate` instead.
 
-The follow-up uses the Actions token and merges its own pull request. To attribute those commits to a
-GitHub App instead, install a repository-scoped app with **Contents**, **Pull requests**, and
+The follow-up uses the Actions token and pushes that synchronization straight to `main`. To attribute
+it to a GitHub App instead, install a repository-scoped app with **Contents**, **Pull requests**, and
 **Issues** read/write on this repository only. Set its client ID as `CHANGELOG_APP_CLIENT_ID` and its
-private key as `CHANGELOG_APP_PRIVATE_KEY`. Those settings live in GitHub, not in this repository.
+private key as `CHANGELOG_APP_PRIVATE_KEY`. The app then opens and merges a pull request. Those
+settings live in GitHub, not in this repository.
 
 ## MVP requirement status (PRD §29.6)
 
@@ -118,6 +119,8 @@ build these move to once the MVP graduation criteria (PRD §29.10) are met.
 <!-- changelog:start -->
 ## Change history
 
+- **Changes** — 2026-10-21 — [Merge pull request #5 from Jam3sl1u/fix-changelog-release](https://github.com/Jam3sl1u/Chariot/commit/41b5b28ba9a94186c3fa743ae4380de8d5414e53) (41b5b28)
+- **Fixes** — 2026-10-21 — [refresh the changelog when no GitHub App is configured](https://github.com/Jam3sl1u/Chariot/commit/1d7b6a98907917fe5bdcb4dcc610e5049c777cae) (1d7b6a9)
 - **Changes** — 2026-10-21 — [Merge pull request #4 from Jam3sl1u/fix-release-checks](https://github.com/Jam3sl1u/Chariot/commit/902c21c76aa52911e3cd0854e3d67ca6b251266a) (902c21c)
 - **Fixes** — 2026-10-21 — [accept the GitHub App client id in the release workflow](https://github.com/Jam3sl1u/Chariot/commit/60f41c965e37ac10bc121b82e4bb498d8fe5e47a) (60f41c9)
 - **Changes** — 2026-10-20 — [Merge pull request #3 from Jam3sl1u/automated-changelog-workflow](https://github.com/Jam3sl1u/Chariot/commit/43d2e034a3a38e7627bcdd68f7977715b62d460b) (43d2e03)
