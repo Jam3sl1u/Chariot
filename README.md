@@ -119,6 +119,9 @@ build these move to once the MVP graduation criteria (PRD §29.10) are met.
 <!-- changelog:start -->
 ## Change history
 
+- **Changes** — **v2026.10.21.4** — 2026-10-21 — [Merge pull request #7 from Jam3sl1u/fix-changelog-push](https://github.com/Jam3sl1u/Chariot/commit/2a4c9a0897e3da8266eaf53c70741cc82560abfe) (2a4c9a0)
+- **Fixes** — **v2026.10.21.3** — 2026-10-21 — [include the release tag in the changelog](https://github.com/Jam3sl1u/Chariot/commit/3cf3fc539663808ab9da02cdbaef108eb0547844) (3cf3fc5)
+- **Fixes** — **v2026.10.21.2** — 2026-10-21 — [publish the changelog sync without opening a pull request](https://github.com/Jam3sl1u/Chariot/commit/c161cffea42955dade56d106abfece64c33b9314) (c161cff)
 - **Changes** — **v2026.10.21.1** — 2026-10-21 — [Merge pull request #5 from Jam3sl1u/fix-changelog-release](https://github.com/Jam3sl1u/Chariot/commit/41b5b28ba9a94186c3fa743ae4380de8d5414e53) (41b5b28)
 - **Fixes** — 2026-10-21 — [refresh the changelog when no GitHub App is configured](https://github.com/Jam3sl1u/Chariot/commit/1d7b6a98907917fe5bdcb4dcc610e5049c777cae) (1d7b6a9)
 - **Changes** — 2026-10-21 — [Merge pull request #4 from Jam3sl1u/fix-release-checks](https://github.com/Jam3sl1u/Chariot/commit/902c21c76aa52911e3cd0854e3d67ca6b251266a) (902c21c)
