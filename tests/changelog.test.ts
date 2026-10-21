@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  changelogMatchesLandingCommit,
   classifyChange,
   cleanSummary,
   hasAllowedTitlePrefix,
@@ -41,6 +42,13 @@ test('automation changes are excluded from ordinary release history', () => {
   assert.equal(isAutomationChange('chore(release): sync changelog'), true);
   assert.equal(isAutomationChange('Any title', ['release-automation']), true);
   assert.equal(isAutomationChange('feat: send notifications'), false);
+});
+
+test('a landing push may match its parent; a pull request may not', () => {
+  assert.equal(changelogMatchesLandingCommit({ matchesRef: true, matchesFirstParent: false, checkingHead: true, eventName: 'push' }), true);
+  assert.equal(changelogMatchesLandingCommit({ matchesRef: false, matchesFirstParent: true, checkingHead: true, eventName: 'push' }), true);
+  assert.equal(changelogMatchesLandingCommit({ matchesRef: false, matchesFirstParent: true, checkingHead: false, eventName: 'push' }), false);
+  assert.equal(changelogMatchesLandingCommit({ matchesRef: false, matchesFirstParent: true, checkingHead: true, eventName: 'pull_request' }), false);
 });
 
 test('pull request titles require a conventional changelog prefix', () => {
