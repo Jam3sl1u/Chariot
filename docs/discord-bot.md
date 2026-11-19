@@ -1,7 +1,8 @@
 # Chariot Discord + Sheets MVP
 
-Implements MVP-000–004 and the Discord portions of BOT-001–030 under PRD §29.
+Implements the Discord and Sheets MVP under PRD §29.
 The PRD is at `documentation/prd/Chariot_PRD_v2_3.md`.
+Requirement-by-requirement status is in [requirements-history.md](requirements-history.md).
 
 The MVP uses Discord DMs, per §29.2–29.4. There is no SMS selector, portal link,
 password setup, standing request, waitlist autofill, or assignment-result notification

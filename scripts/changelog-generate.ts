@@ -62,25 +62,25 @@ function records(ref: string): ChangeRecord[] {
   })).reverse();
 }
 
-function rendered(ref: string, readme: string): { readme: string; changelog: string } {
+function rendered(ref: string, historyDoc: string): { historyDoc: string; changelog: string } {
   const changes = records(ref);
   const history = renderHistory(changes);
-  return { readme: replaceGeneratedBlock(readme, history), changelog: renderChangelog(changes) };
+  return { historyDoc: replaceGeneratedBlock(historyDoc, history), changelog: renderChangelog(changes) };
 }
 
-const readmePath = resolve(root, 'README.md');
+const historyPath = resolve(root, 'docs/change-history.md');
 const changelogPath = resolve(root, 'CHANGELOG.md');
 const ref = historyRef();
-const readme = readFileSync(readmePath, 'utf8');
-const expected = rendered(ref, readme);
+const historyDoc = readFileSync(historyPath, 'utf8');
+const expected = rendered(ref, historyDoc);
 
 if (mode === 'check') {
   const actualChangelog = readFileSync(changelogPath, 'utf8');
-  const matchesRef = readme === expected.readme && actualChangelog === expected.changelog;
+  const matchesRef = historyDoc === expected.historyDoc && actualChangelog === expected.changelog;
   const parent = `${ref}^`;
   const matchesFirstParent = refExists(parent) && (() => {
-    const earlier = rendered(parent, readme);
-    return readme === earlier.readme && actualChangelog === earlier.changelog;
+    const earlier = rendered(parent, historyDoc);
+    return historyDoc === earlier.historyDoc && actualChangelog === earlier.changelog;
   })();
   let checkingHead = false;
   try {
@@ -94,9 +94,9 @@ if (mode === 'check') {
     checkingHead,
     eventName: process.env.GITHUB_EVENT_NAME,
   })) {
-    throw new Error('README.md or CHANGELOG.md is out of date. Run npm run changelog:generate.');
+    throw new Error('docs/change-history.md or CHANGELOG.md is out of date. Run npm run changelog:generate.');
   }
 } else {
-  writeFileSync(readmePath, expected.readme);
+  writeFileSync(historyPath, expected.historyDoc);
   writeFileSync(changelogPath, expected.changelog);
 }

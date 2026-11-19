@@ -1,8 +1,9 @@
 # Chariot — agent working agreement
 
 Chariot is the Discord + Google Sheets MVP defined in PRD §29
-(`documentation/prd/Chariot_PRD_v2_3.md`). The README has the layout, commands and the MVP
-requirement status table (MVP-000–009, tasks M.1–M.8). `docs/discord-bot.md` has setup and the manual
+(`documentation/prd/Chariot_PRD_v2_3.md`). The README is the project overview. Requirement status
+(MVP-000 through MVP-009, tasks M.1 through M.8) is in `docs/requirements-history.md`. The generated change list is in
+`docs/change-history.md` and `CHANGELOG.md`. `docs/discord-bot.md` has setup and the manual
 acceptance test. This file decides one thing: **when to just proceed, and when to stop and ask
 James.**
 
@@ -10,7 +11,7 @@ James.**
 
 - Requirements: PRD §29 (MVP). Sections 1–28 are the future full build — do not implement them here
   unless James asks. The PRD is read-only for agents.
-- Keep the README's requirement status table accurate: when you finish or change work on an MVP-xxx
+- Keep `docs/requirements-history.md` accurate: when you finish or change work on an MVP-xxx
   requirement or an M.x task, update its row in the same change.
 
 ## Tier 1 — proceed without asking
@@ -48,14 +49,14 @@ If one task is blocked, work on another unrelated one rather than stalling the w
    real Discord or Sheet behavior need the manual acceptance test in `docs/discord-bot.md`; say which
    parts you did or didn't run.
 3. **Re-check Tier 2.** If you proceeded on an assumption that belonged there, stop, undo it and ask.
-4. **Keep docs in step.** Update `docs/discord-bot.md` and the README status table when behavior,
+4. **Keep docs in step.** Update `docs/discord-bot.md` and `docs/requirements-history.md` when behavior,
    commands, or Sheet columns change.
 
 ## Repository workflow
 
 - Use concise PR titles beginning with `feat:`, `fix:`, `docs:`, `test:`, `ci:`, `chore:` or
   `refactor:`. The changelog automation uses this title after a squash merge.
-- Do not manually edit the README content between `<!-- changelog:start -->` and
+- Do not manually edit `docs/change-history.md` between `<!-- changelog:start -->` and
   `<!-- changelog:end -->`, or `CHANGELOG.md`; run `npm run changelog:generate` instead.
 
 ## Safety
