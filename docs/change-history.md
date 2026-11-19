@@ -5,6 +5,8 @@ Generated from commits on `main`. Leave the block between the markers alone. Run
 <!-- changelog:start -->
 ## Change history
 
+- **Changes** — **v2026.11.18.2** — 2026-11-18 — [Merge pull request #8 from Jam3sl1u/cursor/readme-recruiter-9e3e](https://github.com/Jam3sl1u/Chariot/commit/8dd188c7b91a6ad22894d702bb8734ba749a38ef) (8dd188c)
+- **Documentation** — **v2026.11.18.1** — 2026-11-19 — [redesign the README for readers outside the project](https://github.com/Jam3sl1u/Chariot/commit/b2c0bfaf0ec964c38d4278280d642c4b9327d5db) (b2c0bfa)
 - **Changes** — **v2026.10.21.4** — 2026-10-21 — [Merge pull request #7 from Jam3sl1u/fix-changelog-push](https://github.com/Jam3sl1u/Chariot/commit/2a4c9a0897e3da8266eaf53c70741cc82560abfe) (2a4c9a0)
 - **Fixes** — **v2026.10.21.3** — 2026-10-21 — [include the release tag in the changelog](https://github.com/Jam3sl1u/Chariot/commit/3cf3fc539663808ab9da02cdbaef108eb0547844) (3cf3fc5)
 - **Fixes** — **v2026.10.21.2** — 2026-10-21 — [publish the changelog sync without opening a pull request](https://github.com/Jam3sl1u/Chariot/commit/c161cffea42955dade56d106abfece64c33b9314) (c161cff)
