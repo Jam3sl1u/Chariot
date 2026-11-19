@@ -50,10 +50,10 @@ jobs:
           APP_TOKEN: ${{ steps.app-token.outputs.token }}
           CHANGELOG_BRANCH: automation/changelog
         run: |
-          if git diff --quiet -- README.md CHANGELOG.md; then
+          if git diff --quiet -- docs/change-history.md CHANGELOG.md; then
             exit 0
           fi
-          git add README.md CHANGELOG.md
+          git add docs/change-history.md CHANGELOG.md
           git commit -m 'chore(release): sync changelog'
           if [ -z "$APP_TOKEN" ]; then
             git push origin HEAD:main
